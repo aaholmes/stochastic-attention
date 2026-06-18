@@ -2,7 +2,7 @@
 
 A research-validation prototype exploring whether you can make LLM text generation cheaper by **randomly sampling** the attention cache instead of reading all of it — without distorting the model's output on average.
 
-> **Status.** Design phase. `PROTOTYPE_DESIGN.md` is the authoritative spec; no source code yet. Target hardware: a single 16 GB RTX 5060 Ti (Blackwell).
+> **Status.** Phase A complete — the statistical core is built and its correctness gates pass. `PROTOTYPE_DESIGN.md` is the authoritative spec. Target hardware: a single 16 GB RTX 5060 Ti (Blackwell).
 
 ## The problem, briefly
 
@@ -30,6 +30,23 @@ This is about **correctness and statistics, not speed** (the real speedup lives 
 
 - **GPU-friendly block sampling.** Memory is read in contiguous chunks, so we sample ~1–2 KB **blocks** of values rather than scattered single rows. This makes reads coalesced and matches the real unit of on-chip cache residency — but it changes the estimator, so its unbiasedness is derived and tested separately. Variance-vs-block-size at a fixed read budget is a key result.
 - **We reuse a sibling project for the model.** The accuracy/microbench phases plug into [`../llms`](../llms) — a from-scratch, HuggingFace-bit-exact Qwen3 inference engine (same author, same GPU) — by swapping its attention op directly, rather than patching HuggingFace internals. The statistics core (`ssa/`) stays standalone.
+
+## What's built so far (Phase A — the statistical core)
+
+The `ssa/` package implements and validates the foundation, on tiny random tensors, with no model in the loop:
+
+- **One swappable interface** `attn(q, K, V, impl=...)` with five implementations: `dense` (exact ground truth), `topk` (biased baseline), and the three unbiased samplers `santa` (i.i.d.), `santa_strat` (stratified), `santa_sys` (systematic).
+- **The sampling mechanics** — per-head CDF construction and inverse-CDF index draws (one shared offset per head for systematic), with with-replacement unique-key counting.
+- **A measurement harness** that estimates each sampler's Monte-Carlo mean and its variance-vs-budget slope, accumulating in float64 so low-precision roundoff is never mistaken for bias. Results are written to `src/ssa/results/` stamped with git SHA, GPU, and library versions.
+
+**Both correctness gates pass** (24 tests):
+
+1. *Unbiased* — every `santa*` mean matches `dense` to within Monte-Carlo error.
+2. *Variance falls as ~1/S* — measured log-log slopes of −1.0 (i.i.d.), −1.3 (stratified), −1.5 (systematic), reproducing the paper's pattern that structured sampling beats i.i.d.
+
+Run it: `uv run pytest` (full suite) and `uv run python -m ssa.harness.variance` (prints the slopes, writes a stamped result file).
+
+**Not yet built:** the hybrid estimator (Idea 1), block sampling, reuse/resident caching (Ideas 2–3), and the real-model accuracy/microbench phases.
 
 ## Repository
 
