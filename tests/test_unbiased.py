@@ -31,6 +31,23 @@ def test_mc_mean_matches_dense(impl):
     assert z.max().item() < 5.0, f"{impl}: max |z| = {z.max().item():.2f} (mean biased?)"
 
 
+@pytest.mark.parametrize("tail", ["sys", "strat", "iid"])
+@pytest.mark.parametrize("k_h", [2, 8])
+def test_hybrid_mc_mean_matches_dense(k_h, tail):
+    # Idea 1 must be exactly unbiased for any distribution (design §7.3).
+    q, K, V = make_qkv(Geom(H=4, H_kv=2, d=16, n_k=128), seed=0, dtype=torch.float64)
+    ref = dense(q, K, V).to(torch.float64)
+
+    runs, S_tail = 2000, 24
+    est = collect_estimates(
+        "santa_hybrid", q, K, V, S=S_tail, runs=runs, base_seed=2000,
+        k_h=k_h, tail=tail,
+    )
+    mean, stderr = mc_mean_and_stderr(est)
+    z = (mean - ref).abs() / stderr.clamp_min(1e-300)
+    assert z.max().item() < 5.0, f"hybrid k_h={k_h} tail={tail}: max |z| = {z.max().item():.2f}"
+
+
 @pytest.mark.parametrize("impl", IMPLS)
 def test_estimator_mean_is_seed_independent_in_expectation(impl):
     # Two disjoint seed blocks should agree within combined MC error.

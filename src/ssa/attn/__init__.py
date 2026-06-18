@@ -43,3 +43,4 @@ def attn(q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, *, impl: str, **cfg)
 # an import cycle: the impl modules import ``register`` from this module.
 from . import dense as _dense  # noqa: E402,F401
 from . import santa as _santa  # noqa: E402,F401
+from . import hybrid as _hybrid  # noqa: E402,F401
