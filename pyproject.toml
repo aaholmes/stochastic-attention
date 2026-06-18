@@ -6,7 +6,15 @@ requires-python = ">=3.11,<3.14"
 dependencies = [
     "torch>=2.5",
     "numpy>=1.26",
+    # Sibling Qwen3 inference engine (public). Provides the `engine` package and
+    # the decode attention seam we plug into for the Phase C accuracy harness.
+    "specd",
+    "transformers>=4.45",
+    "datasets>=2.18",
 ]
+
+[tool.uv.sources]
+specd = { path = "../llms", editable = true }
 
 [dependency-groups]
 dev = ["pytest>=8.0"]
