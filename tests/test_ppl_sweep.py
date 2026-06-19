@@ -30,3 +30,23 @@ def test_run_sweep_produces_all_conditions():
     assert results[2]["total_budget"] == 16  # k_h + S
     # table renders without error
     assert "condition" in _format_table(results)
+
+
+def test_failing_condition_is_isolated_and_callback_fires():
+    cfg = TinyCfg()
+    model = tiny_model(cfg, seed=2)
+    g = torch.Generator().manual_seed(0)
+    chunks = [torch.randint(0, cfg.vocab_size, (1, 20), generator=g) for _ in range(1)]
+
+    seen = []
+    conditions = [("dense", {}), ("santa_bogus", {"S": 4}), ("santa_sys", {"S": 4})]
+    results = run_sweep(
+        model, chunks, conditions=conditions, prefill_len=6, n_runs=1,
+        on_condition=lambda r, allr: seen.append(r["impl"]),
+    )
+    # the bad condition is recorded as an error; the sweep continues past it
+    assert len(results) == 3
+    assert "error" in results[1] and "santa_bogus" in results[1]["impl"]
+    assert "error" not in results[2]  # later condition still ran
+    assert seen == ["dense", "santa_bogus", "santa_sys"]  # callback fired each time
+    assert "ERROR" in _format_table(results)
