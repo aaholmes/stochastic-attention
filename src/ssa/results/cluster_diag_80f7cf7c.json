@@ -1,0 +1,482 @@
+{
+  "git_sha": "80f7cf7c0f159770a4ec6689a5bb1f623ea6767e",
+  "torch_version": "2.12.1+cu130",
+  "cuda_version": "13.0",
+  "python_version": "3.13.5",
+  "platform": "Linux-6.8.0-124-generic-x86_64-with-glibc2.39",
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 5060 Ti",
+    "capability": [
+      12,
+      0
+    ],
+    "driver": "13.0"
+  },
+  "kind": "cluster_diagnostic",
+  "model": "Qwen/Qwen3-4B",
+  "block": [
+    8,
+    16
+  ],
+  "kv_head": 0,
+  "prefill": 1024,
+  "steps": 32,
+  "per_layer": {
+    "0": {
+      "8": {
+        "n_k": 1025,
+        "n_queries": 128,
+        "B": 8,
+        "n_clusters": 129,
+        "kmeans": {
+          "frac_keys_oracle": 0.017301829531788826,
+          "frac_keys_gauss": 0.235724076628685,
+          "frac_keys_mag": 0.08262957632541656,
+          "frac_keys_for_99pct_mass": 0.017301829531788826,
+          "free_energy_err_nats": 232.0364990234375,
+          "free_energy_err_mag_nats": 27.64719581604004,
+          "within_cluster_participation": 1.0249741077423096,
+          "radius_bound_valid": true
+        },
+        "kmeans_sphere": {
+          "frac_keys_oracle": 0.019054878503084183,
+          "frac_keys_gauss": 0.2552286684513092,
+          "frac_keys_mag": 0.08373475819826126,
+          "frac_keys_for_99pct_mass": 0.019054878503084183,
+          "free_energy_err_nats": 179.3582000732422,
+          "free_energy_err_mag_nats": 21.27657699584961,
+          "within_cluster_participation": 1.0271464586257935,
+          "radius_bound_valid": true
+        },
+        "kmeans_qw": {
+          "frac_keys_oracle": 0.01584603637456894,
+          "frac_keys_gauss": 0.22527438402175903,
+          "frac_keys_mag": 0.04256860166788101,
+          "frac_keys_for_99pct_mass": 0.01584603637456894,
+          "free_energy_err_nats": 147.14239501953125,
+          "free_energy_err_mag_nats": 19.949373245239258,
+          "within_cluster_participation": 1.0445270538330078,
+          "radius_bound_valid": true
+        },
+        "contiguous": {
+          "frac_keys_oracle": 0.012431402690708637,
+          "frac_keys_gauss": 0.33846038579940796,
+          "frac_keys_mag": 0.06892530620098114,
+          "frac_keys_for_99pct_mass": 0.012431402690708637,
+          "free_energy_err_nats": 417.222900390625,
+          "free_energy_err_mag_nats": 32.04490661621094,
+          "within_cluster_participation": 1.043985366821289,
+          "radius_bound_valid": true
+        },
+        "random": {
+          "frac_keys_oracle": 0.016280487179756165,
+          "frac_keys_gauss": 0.14341463148593903,
+          "frac_keys_mag": 0.27279725670814514,
+          "frac_keys_for_99pct_mass": 0.016280487179756165,
+          "free_energy_err_nats": 514.309814453125,
+          "free_energy_err_mag_nats": 41.06865310668945,
+          "within_cluster_participation": 1.000377893447876,
+          "radius_bound_valid": true
+        }
+      },
+      "16": {
+        "n_k": 1025,
+        "n_queries": 128,
+        "B": 16,
+        "n_clusters": 65,
+        "kmeans": {
+          "frac_keys_oracle": 0.026989329606294632,
+          "frac_keys_gauss": 0.221737802028656,
+          "frac_keys_mag": 0.11936737596988678,
+          "frac_keys_for_99pct_mass": 0.026989329606294632,
+          "free_energy_err_nats": 289.8868713378906,
+          "free_energy_err_mag_nats": 37.48146057128906,
+          "within_cluster_participation": 1.0567265748977661,
+          "radius_bound_valid": true
+        },
+        "kmeans_sphere": {
+          "frac_keys_oracle": 0.03380335122346878,
+          "frac_keys_gauss": 0.3053048551082611,
+          "frac_keys_mag": 0.10174541920423508,
+          "frac_keys_for_99pct_mass": 0.03380335122346878,
+          "free_energy_err_nats": 229.95314025878906,
+          "free_energy_err_mag_nats": 29.672327041625977,
+          "within_cluster_participation": 1.024319052696228,
+          "radius_bound_valid": true
+        },
+        "kmeans_qw": {
+          "frac_keys_oracle": 0.023429878056049347,
+          "frac_keys_gauss": 0.27125000953674316,
+          "frac_keys_mag": 0.06025152653455734,
+          "frac_keys_for_99pct_mass": 0.023429878056049347,
+          "free_energy_err_nats": 188.71609497070312,
+          "free_energy_err_mag_nats": 27.187538146972656,
+          "within_cluster_participation": 1.0459157228469849,
+          "radius_bound_valid": true
+        },
+        "contiguous": {
+          "frac_keys_oracle": 0.022484755143523216,
+          "frac_keys_gauss": 0.40346041321754456,
+          "frac_keys_mag": 0.08797255903482437,
+          "frac_keys_for_99pct_mass": 0.022484755143523216,
+          "free_energy_err_nats": 446.3661804199219,
+          "free_energy_err_mag_nats": 40.38898849487305,
+          "within_cluster_participation": 1.0508478879928589,
+          "radius_bound_valid": true
+        },
+        "random": {
+          "frac_keys_oracle": 0.03219512104988098,
+          "frac_keys_gauss": 0.2157316952943802,
+          "frac_keys_mag": 0.4020960330963135,
+          "frac_keys_for_99pct_mass": 0.03219512104988098,
+          "free_energy_err_nats": 535.4203491210938,
+          "free_energy_err_mag_nats": 49.63042068481445,
+          "within_cluster_participation": 1.000741720199585,
+          "radius_bound_valid": true
+        }
+      }
+    },
+    "12": {
+      "8": {
+        "n_k": 1025,
+        "n_queries": 128,
+        "B": 8,
+        "n_clusters": 129,
+        "kmeans": {
+          "frac_keys_oracle": 0.012172254733741283,
+          "frac_keys_gauss": 0.04774390161037445,
+          "frac_keys_mag": 0.11798018217086792,
+          "frac_keys_for_99pct_mass": 0.012172254733741283,
+          "free_energy_err_nats": 150.40994262695312,
+          "free_energy_err_mag_nats": 26.501300811767578,
+          "within_cluster_participation": 1.0038425922393799,
+          "radius_bound_valid": true
+        },
+        "kmeans_sphere": {
+          "frac_keys_oracle": 0.006067072972655296,
+          "frac_keys_gauss": 0.49714940786361694,
+          "frac_keys_mag": 0.03438262268900871,
+          "frac_keys_for_99pct_mass": 0.006067072972655296,
+          "free_energy_err_nats": 145.48715209960938,
+          "free_energy_err_mag_nats": 25.463083267211914,
+          "within_cluster_participation": 1.002984881401062,
+          "radius_bound_valid": true
+        },
+        "kmeans_qw": {
+          "frac_keys_oracle": 0.005442073568701744,
+          "frac_keys_gauss": 0.3322865962982178,
+          "frac_keys_mag": 0.024169206619262695,
+          "frac_keys_for_99pct_mass": 0.005442073568701744,
+          "free_energy_err_nats": 92.25608825683594,
+          "free_energy_err_mag_nats": 20.813167572021484,
+          "within_cluster_participation": 1.0013788938522339,
+          "radius_bound_valid": true
+        },
+        "contiguous": {
+          "frac_keys_oracle": 0.009390244260430336,
+          "frac_keys_gauss": 0.07451219111680984,
+          "frac_keys_mag": 0.09157010912895203,
+          "frac_keys_for_99pct_mass": 0.009390244260430336,
+          "free_energy_err_nats": 265.9613037109375,
+          "free_energy_err_mag_nats": 31.4294490814209,
+          "within_cluster_participation": 1.0022540092468262,
+          "radius_bound_valid": true
+        },
+        "random": {
+          "frac_keys_oracle": 0.009939024224877357,
+          "frac_keys_gauss": 0.033170733600854874,
+          "frac_keys_mag": 0.08685214072465897,
+          "frac_keys_for_99pct_mass": 0.009939024224877357,
+          "free_energy_err_nats": 325.6298522949219,
+          "free_energy_err_mag_nats": 39.1466178894043,
+          "within_cluster_participation": 1.0000141859054565,
+          "radius_bound_valid": true
+        }
+      },
+      "16": {
+        "n_k": 1025,
+        "n_queries": 128,
+        "B": 16,
+        "n_clusters": 65,
+        "kmeans": {
+          "frac_keys_oracle": 0.021486278623342514,
+          "frac_keys_gauss": 0.07082317024469376,
+          "frac_keys_mag": 0.1516692042350769,
+          "frac_keys_for_99pct_mass": 0.021486278623342514,
+          "free_energy_err_nats": 161.5127410888672,
+          "free_energy_err_mag_nats": 34.073936462402344,
+          "within_cluster_participation": 1.0044622421264648,
+          "radius_bound_valid": true
+        },
+        "kmeans_sphere": {
+          "frac_keys_oracle": 0.01683688908815384,
+          "frac_keys_gauss": 0.0599009171128273,
+          "frac_keys_mag": 0.16032011806964874,
+          "frac_keys_for_99pct_mass": 0.01683688908815384,
+          "free_energy_err_nats": 164.15940856933594,
+          "free_energy_err_mag_nats": 33.19093322753906,
+          "within_cluster_participation": 1.0129115581512451,
+          "radius_bound_valid": true
+        },
+        "kmeans_qw": {
+          "frac_keys_oracle": 0.015007620677351952,
+          "frac_keys_gauss": 0.05495426803827286,
+          "frac_keys_mag": 0.08724085241556168,
+          "frac_keys_for_99pct_mass": 0.015007620677351952,
+          "free_energy_err_nats": 118.0030517578125,
+          "free_energy_err_mag_nats": 28.41228675842285,
+          "within_cluster_participation": 1.0024077892303467,
+          "radius_bound_valid": true
+        },
+        "contiguous": {
+          "frac_keys_oracle": 0.01847561076283455,
+          "frac_keys_gauss": 0.08713414520025253,
+          "frac_keys_mag": 0.10347560048103333,
+          "frac_keys_for_99pct_mass": 0.01847561076283455,
+          "free_energy_err_nats": 283.122802734375,
+          "free_energy_err_mag_nats": 38.8951301574707,
+          "within_cluster_participation": 1.0036675930023193,
+          "radius_bound_valid": true
+        },
+        "random": {
+          "frac_keys_oracle": 0.019878048449754715,
+          "frac_keys_gauss": 0.06048780307173729,
+          "frac_keys_mag": 0.13781249523162842,
+          "frac_keys_for_99pct_mass": 0.019878048449754715,
+          "free_energy_err_nats": 337.400146484375,
+          "free_energy_err_mag_nats": 47.1060676574707,
+          "within_cluster_participation": 1.0000598430633545,
+          "radius_bound_valid": true
+        }
+      }
+    },
+    "24": {
+      "8": {
+        "n_k": 1025,
+        "n_queries": 128,
+        "B": 8,
+        "n_clusters": 129,
+        "kmeans": {
+          "frac_keys_oracle": 0.011242378503084183,
+          "frac_keys_gauss": 0.020922256633639336,
+          "frac_keys_mag": 0.1040472537279129,
+          "frac_keys_for_99pct_mass": 0.011242378503084183,
+          "free_energy_err_nats": 79.66374969482422,
+          "free_energy_err_mag_nats": 13.751113891601562,
+          "within_cluster_participation": 1.0004979372024536,
+          "radius_bound_valid": true
+        },
+        "kmeans_sphere": {
+          "frac_keys_oracle": 0.0026143293362110853,
+          "frac_keys_gauss": 0.2166539579629898,
+          "frac_keys_mag": 0.003170731710270047,
+          "frac_keys_for_99pct_mass": 0.0026143293362110853,
+          "free_energy_err_nats": 74.10889434814453,
+          "free_energy_err_mag_nats": 13.061079978942871,
+          "within_cluster_participation": 1.0005016326904297,
+          "radius_bound_valid": true
+        },
+        "kmeans_qw": {
+          "frac_keys_oracle": 0.0024085366167128086,
+          "frac_keys_gauss": 0.06567072868347168,
+          "frac_keys_mag": 0.0029420731589198112,
+          "frac_keys_for_99pct_mass": 0.0024085366167128086,
+          "free_energy_err_nats": 41.505027770996094,
+          "free_energy_err_mag_nats": 8.31913948059082,
+          "within_cluster_participation": 1.00107741355896,
+          "radius_bound_valid": true
+        },
+        "contiguous": {
+          "frac_keys_oracle": 0.008185975253582,
+          "frac_keys_gauss": 0.026600606739521027,
+          "frac_keys_mag": 0.5928887128829956,
+          "frac_keys_for_99pct_mass": 0.008185975253582,
+          "free_energy_err_nats": 87.98857116699219,
+          "free_energy_err_mag_nats": 14.414283752441406,
+          "within_cluster_participation": 1.0010690689086914,
+          "radius_bound_valid": true
+        },
+        "random": {
+          "frac_keys_oracle": 0.008414633572101593,
+          "frac_keys_gauss": 0.013536585494875908,
+          "frac_keys_mag": 0.06542682647705078,
+          "frac_keys_for_99pct_mass": 0.008414633572101593,
+          "free_energy_err_nats": 160.2702178955078,
+          "free_energy_err_mag_nats": 16.39999771118164,
+          "within_cluster_participation": 1.0,
+          "radius_bound_valid": true
+        }
+      },
+      "16": {
+        "n_k": 1025,
+        "n_queries": 128,
+        "B": 16,
+        "n_clusters": 65,
+        "kmeans": {
+          "frac_keys_oracle": 0.011067072860896587,
+          "frac_keys_gauss": 0.02013719454407692,
+          "frac_keys_mag": 0.4374009072780609,
+          "frac_keys_for_99pct_mass": 0.011067072860896587,
+          "free_energy_err_nats": 103.50341033935547,
+          "free_energy_err_mag_nats": 19.765422821044922,
+          "within_cluster_participation": 1.0018243789672852,
+          "radius_bound_valid": true
+        },
+        "kmeans_sphere": {
+          "frac_keys_oracle": 0.011211889795958996,
+          "frac_keys_gauss": 0.020182926207780838,
+          "frac_keys_mag": 0.11628811061382294,
+          "frac_keys_for_99pct_mass": 0.011211889795958996,
+          "free_energy_err_nats": 103.71614837646484,
+          "free_energy_err_mag_nats": 18.419261932373047,
+          "within_cluster_participation": 1.001837134361267,
+          "radius_bound_valid": true
+        },
+        "kmeans_qw": {
+          "frac_keys_oracle": 0.002903963439166546,
+          "frac_keys_gauss": 0.0973246842622757,
+          "frac_keys_mag": 0.004474084824323654,
+          "frac_keys_for_99pct_mass": 0.002903963439166546,
+          "free_energy_err_nats": 52.2528076171875,
+          "free_energy_err_mag_nats": 10.851531028747559,
+          "within_cluster_participation": 1.0011037588119507,
+          "radius_bound_valid": true
+        },
+        "contiguous": {
+          "frac_keys_oracle": 0.016356706619262695,
+          "frac_keys_gauss": 0.0303810965269804,
+          "frac_keys_mag": 0.7744969725608826,
+          "frac_keys_for_99pct_mass": 0.016356706619262695,
+          "free_energy_err_nats": 103.0180435180664,
+          "free_energy_err_mag_nats": 19.370765686035156,
+          "within_cluster_participation": 1.001069188117981,
+          "radius_bound_valid": true
+        },
+        "random": {
+          "frac_keys_oracle": 0.016707316040992737,
+          "frac_keys_gauss": 0.04134146124124527,
+          "frac_keys_mag": 0.052568595856428146,
+          "frac_keys_for_99pct_mass": 0.016707316040992737,
+          "free_energy_err_nats": 164.94923400878906,
+          "free_energy_err_mag_nats": 21.429977416992188,
+          "within_cluster_participation": 1.0005176067352295,
+          "radius_bound_valid": true
+        }
+      }
+    },
+    "35": {
+      "8": {
+        "n_k": 1025,
+        "n_queries": 128,
+        "B": 8,
+        "n_clusters": 129,
+        "kmeans": {
+          "frac_keys_oracle": 0.005777438636869192,
+          "frac_keys_gauss": 0.02167682722210884,
+          "frac_keys_mag": 0.1955716460943222,
+          "frac_keys_for_99pct_mass": 0.005777438636869192,
+          "free_energy_err_nats": 96.54624938964844,
+          "free_energy_err_mag_nats": 19.01622772216797,
+          "within_cluster_participation": 1.0002968311309814,
+          "radius_bound_valid": true
+        },
+        "kmeans_sphere": {
+          "frac_keys_oracle": 0.001867378014139831,
+          "frac_keys_gauss": 0.35371190309524536,
+          "frac_keys_mag": 0.0023704268969595432,
+          "frac_keys_for_99pct_mass": 0.001867378014139831,
+          "free_energy_err_nats": 83.67579650878906,
+          "free_energy_err_mag_nats": 17.786273956298828,
+          "within_cluster_participation": 1.0002986192703247,
+          "radius_bound_valid": true
+        },
+        "kmeans_qw": {
+          "frac_keys_oracle": 0.0023094508796930313,
+          "frac_keys_gauss": 0.1776067167520523,
+          "frac_keys_mag": 0.0027134143747389317,
+          "frac_keys_for_99pct_mass": 0.0023094508796930313,
+          "free_energy_err_nats": 50.388763427734375,
+          "free_energy_err_mag_nats": 14.65056037902832,
+          "within_cluster_participation": 1.0081918239593506,
+          "radius_bound_valid": true
+        },
+        "contiguous": {
+          "frac_keys_oracle": 0.008376523852348328,
+          "frac_keys_gauss": 0.026547256857156754,
+          "frac_keys_mag": 0.3059832751750946,
+          "frac_keys_for_99pct_mass": 0.008376523852348328,
+          "free_energy_err_nats": 78.52444458007812,
+          "free_energy_err_mag_nats": 17.05389976501465,
+          "within_cluster_participation": 1.0002557039260864,
+          "radius_bound_valid": true
+        },
+        "random": {
+          "frac_keys_oracle": 0.008597561158239841,
+          "frac_keys_gauss": 0.01530487835407257,
+          "frac_keys_mag": 0.03515243902802467,
+          "frac_keys_for_99pct_mass": 0.008597561158239841,
+          "free_energy_err_nats": 186.51329040527344,
+          "free_energy_err_mag_nats": 29.638263702392578,
+          "within_cluster_participation": 1.0,
+          "radius_bound_valid": true
+        }
+      },
+      "16": {
+        "n_k": 1025,
+        "n_queries": 128,
+        "B": 16,
+        "n_clusters": 65,
+        "kmeans": {
+          "frac_keys_oracle": 0.00817073229700327,
+          "frac_keys_gauss": 0.0323551781475544,
+          "frac_keys_mag": 0.19618140161037445,
+          "frac_keys_for_99pct_mass": 0.00817073229700327,
+          "free_energy_err_nats": 121.01570892333984,
+          "free_energy_err_mag_nats": 25.96967124938965,
+          "within_cluster_participation": 1.0019514560699463,
+          "radius_bound_valid": true
+        },
+        "kmeans_sphere": {
+          "frac_keys_oracle": 0.027660062536597252,
+          "frac_keys_gauss": 0.09801066666841507,
+          "frac_keys_mag": 0.08411584794521332,
+          "frac_keys_for_99pct_mass": 0.027660062536597252,
+          "free_energy_err_nats": 110.32857513427734,
+          "free_energy_err_mag_nats": 25.070709228515625,
+          "within_cluster_participation": 1.0019522905349731,
+          "radius_bound_valid": true
+        },
+        "kmeans_qw": {
+          "frac_keys_oracle": 0.03436737507581711,
+          "frac_keys_gauss": 0.05539633706212044,
+          "frac_keys_mag": 0.04230944812297821,
+          "frac_keys_for_99pct_mass": 0.03436737507581711,
+          "free_energy_err_nats": 62.482975006103516,
+          "free_energy_err_mag_nats": 20.10036849975586,
+          "within_cluster_participation": 1.0157175064086914,
+          "radius_bound_valid": true
+        },
+        "contiguous": {
+          "frac_keys_oracle": 0.016730181872844696,
+          "frac_keys_gauss": 0.04490091651678085,
+          "frac_keys_mag": 0.3554115891456604,
+          "frac_keys_for_99pct_mass": 0.016730181872844696,
+          "free_energy_err_nats": 93.30143737792969,
+          "free_energy_err_mag_nats": 23.0721378326416,
+          "within_cluster_participation": 1.0002570152282715,
+          "radius_bound_valid": true
+        },
+        "random": {
+          "frac_keys_oracle": 0.017195122316479683,
+          "frac_keys_gauss": 0.03597560524940491,
+          "frac_keys_mag": 0.053330786526203156,
+          "frac_keys_for_99pct_mass": 0.017195122316479683,
+          "free_energy_err_nats": 192.01480102539062,
+          "free_energy_err_mag_nats": 36.192352294921875,
+          "within_cluster_participation": 1.0000004768371582,
+          "radius_bound_valid": true
+        }
+      }
+    }
+  }
+}

@@ -65,38 +65,74 @@ def cluster_stats(K: torch.Tensor, labels: torch.Tensor, k: int) -> dict:
 # ---- per-query metrics ------------------------------------------------------
 
 def query_metrics(q: torch.Tensor, K: torch.Tensor, labels: torch.Tensor, stats: dict) -> dict:
-    """For one query: within-cluster score spread, free-energy estimate error, pruning curve."""
+    """For one query: within-cluster score spread, free-energy estimate error, pruning curve.
+
+    Uses the *exact* within-cluster score variance `Var_j(q·k_j)` (= `qᵀΣ_b q` with the
+    full covariance), computed directly from the keys — not a diagonal proxy — so the
+    free-energy test measures the Gaussian *form*, not a covariance approximation.
+    Pruning is *oracle* (rank by true mass): it isolates clustering quality (does the
+    mass land in few blocks) from estimate quality (the separate `fe_err`).
+    """
     q = q.to(torch.float64)
     K = K.to(torch.float64)
-    k = stats["sizes"].shape[0]
-    s = K @ q                                       # true scores [n]
+    k = int(stats["sizes"].shape[0])
+    sizes = stats["sizes"]
+    s = K @ q                                            # true scores [n]
     shift = float(s.max())
+    denom = sizes.clamp_min(1.0)
 
-    mu = stats["centers"] @ q                        # [k] mean score per cluster
-    qSq = (stats["diag_var"] * q.pow(2)).sum(1)      # [k] within-cluster score variance qᵀΣq
-    qnorm = q.norm()
+    # exact per-cluster score mean and variance (full-covariance qᵀΣq, no diagonal proxy)
+    sum_s = torch.zeros(k, dtype=torch.float64).index_add_(0, labels, s)
+    sum_s2 = torch.zeros(k, dtype=torch.float64).index_add_(0, labels, s * s)
+    mu = sum_s / denom
+    var = (sum_s2 / denom - mu.pow(2)).clamp_min(0.0)    # within-cluster score variance
+    qnorm = float(q.norm())
 
-    # true mass per cluster (max-shifted), and the two estimates
     w = torch.exp(s - shift)
-    true_m = torch.zeros(k, dtype=torch.float64).index_add_(0, labels, w)  # [k]
-    moment_m = stats["sizes"] * torch.exp(mu - shift + 0.5 * qSq)          # Gaussian estimate
-    upper_m = stats["sizes"] * torch.exp(mu - shift + qnorm * stats["radii"])  # radius bound
+    true_m = torch.zeros(k, dtype=torch.float64).index_add_(0, labels, w)
+    log_true = true_m.clamp_min(1e-300).log()
 
-    live = stats["sizes"] > 0
-    eps = (true_m[live].clamp_min(1e-300).log() - moment_m[live].clamp_min(1e-300).log())
+    # exp-space within-cluster participation ratio: how many tokens carry the mass
+    # *inside* a cluster. ≈1 ⇒ max-dominated (one token = the cluster) ⇒ moments can't
+    # estimate the mass; ≈|b| ⇒ uniformly hot ⇒ estimable and aggregation pays off.
+    sum_w2 = torch.zeros(k, dtype=torch.float64).index_add_(0, labels, w * w)
+    within_pr = true_m.pow(2) / sum_w2.clamp_min(1e-300)         # [k], in [1, |b|]
+    mass_frac = true_m / true_m.sum().clamp_min(1e-300)
+    within_pr_massw = float((mass_frac * within_pr).sum())       # mass-weighted (hot clusters dominate)
+    # Gaussian free-energy estimate with the exact variance, in log space (overflow-free)
+    log_est = sizes.clamp_min(1e-300).log() + (mu - shift) + 0.5 * var
+    log_upper = sizes.clamp_min(1e-300).log() + (mu - shift) + qnorm * stats["radii"]
 
-    # pruning: fetch clusters ranked by the realistic moment estimate; cumulative TRUE mass
-    order = torch.argsort(moment_m, descending=True)
-    keys_cum = stats["sizes"][order].cumsum(0) / stats["sizes"].sum()
-    mass_cum = true_m[order].cumsum(0) / true_m.sum()
+    # magnitude-based mass estimate: scores ≈ |k_j|·(q·ĉ_b) with ĉ_b the unit cluster
+    # direction (tests the "domination is along magnitude, not direction" hypothesis —
+    # exact when a cluster's keys share a direction, no Gaussian assumption).
+    cdir = stats["centers"] / stats["centers"].norm(dim=1, keepdim=True).clamp_min(1e-12)
+    d_b = cdir @ q                                       # [k] per-unit-magnitude score
+    kmag = K.norm(dim=1)                                 # [n]
+    shat = kmag * d_b[labels]                            # [n] predicted scores
+    m_mag = torch.zeros(k, dtype=torch.float64).index_add_(0, labels, torch.exp(shat - shift))
+    log_mag = m_mag.clamp_min(1e-300).log()
+
+    live = sizes > 0
+    eps = log_true[live] - log_est[live]
+    eps_mag = log_true[live] - log_mag[live]
+
+    # The decision-relevant metric: rank clusters by each ranking key, fetch greedily,
+    # and track cumulative TRUE mass vs cumulative keys fetched. "oracle" = best possible
+    # (rank by true mass); "gauss"/"mag" = what the cheap estimates actually achieve.
+    def _curve(rank_key):
+        order = torch.argsort(rank_key, descending=True)
+        return (sizes[order].cumsum(0) / sizes.sum(),
+                true_m[order].cumsum(0) / true_m.sum())
 
     return {
-        "score_std": qSq.clamp_min(0).sqrt(),       # per-cluster within-cluster score spread (nats)
-        "mu_std": float(mu.std()),                  # across-cluster spread of mean scores
-        "fe_err_abs": float(eps.abs().mean()),      # free-energy estimate error |ε| (nats)
-        "fe_err_signed": float(eps.mean()),
-        "upper_ok": bool((upper_m + 1e-9 >= true_m).all()),  # radius bound is a true upper bound
-        "keys_cum": keys_cum, "mass_cum": mass_cum,
+        "score_std": var.sqrt(),                         # within-cluster score spread (nats)
+        "mu_std": float(mu[live].std()),                 # across-cluster spread of mean scores
+        "fe_err_abs": float(eps.abs().mean()),           # |ε| nats (Gaussian) — demoted to a side check
+        "fe_err_mag": float(eps_mag.abs().mean()),       # |ε| nats (magnitude estimate)
+        "upper_ok": bool((log_upper[live] + 1e-9 >= log_true[live]).all()),
+        "within_pr": within_pr, "within_pr_massw": within_pr_massw,
+        "curves": {"oracle": _curve(true_m), "gauss": _curve(log_est), "mag": _curve(log_mag)},
     }
 
 
@@ -108,33 +144,60 @@ def _frac_keys_for_mass(keys_cum, mass_cum, target: float) -> float:
 
 # ---- summary over many queries, with clustering baselines -------------------
 
-def _label_schemes(K, B, seed):
+def query_whiten(K: torch.Tensor, Q: torch.Tensor) -> torch.Tensor:
+    """Map keys into the query metric: `K · C_q^{1/2}`, `C_q = E[q qᵀ]`.
+
+    Euclidean k-means on the result minimizes within-cluster *score* variance
+    `tr(C_q Σ_b)` (what the free-energy estimate needs) instead of raw key spread
+    `tr(Σ_b)` — it scales up the directions queries actually point and collapses the
+    ones no query looks at (the §3.9 "query-aware / Mahalanobis" objective).
+    """
+    Q = Q.to(torch.float64)
+    Cq = (Q.t() @ Q) / Q.shape[0]                                # [d, d]
+    evals, evecs = torch.linalg.eigh(Cq)
+    W = evecs @ torch.diag(evals.clamp_min(0).sqrt()) @ evecs.t()  # C_q^{1/2}
+    return K.to(torch.float64) @ W
+
+
+def _label_schemes(K, B, seed, Q=None):
     n = K.shape[0]
     k = (n + B - 1) // B
-    km_labels, _ = kmeans(K, k, seed=seed)
-    contig = (torch.arange(n) // B).clamp(max=k - 1)            # §3.8 position blocks
+    schemes = {"kmeans": kmeans(K, k, seed=seed)[0]}
+    Kn = K / K.to(torch.float64).norm(dim=1, keepdim=True).clamp_min(1e-12)
+    schemes["kmeans_sphere"] = kmeans(Kn, k, seed=seed)[0]       # cluster by direction only
+    if Q is not None:                                            # query-whitened (Mahalanobis)
+        schemes["kmeans_qw"] = kmeans(query_whiten(K, Q), k, seed=seed)[0]
+    schemes["contiguous"] = (torch.arange(n) // B).clamp(max=k - 1)   # §3.8 position blocks
     g = torch.Generator().manual_seed(seed)
-    rand = (torch.randperm(n, generator=g) // B).clamp(max=k - 1)
-    return {"kmeans": km_labels, "contiguous": contig, "random": rand}, k
+    schemes["random"] = (torch.randperm(n, generator=g) // B).clamp(max=k - 1)
+    return schemes, k
 
 
 def summarize(K: torch.Tensor, Q: torch.Tensor, *, B: int = 16, target: float = 0.99, seed: int = 0) -> dict:
     """Cluster K (n_k/B clusters), average metrics over the queries Q. Returns a dict."""
-    schemes, k = _label_schemes(K, B, seed)
+    schemes, k = _label_schemes(K, B, seed, Q=Q)
     out = {"n_k": int(K.shape[0]), "n_queries": int(Q.shape[0]), "B": B, "n_clusters": k}
     for name, labels in schemes.items():
         stats = cluster_stats(K, labels, k)
-        fracs, fe, std_ratio, upper_ok = [], [], [], True
+        oracle, gauss, mag, fe, fe_mag, pr, upper_ok = [], [], [], [], [], [], True
         for q in Q:
             m = query_metrics(q, K, labels, stats)
-            fracs.append(_frac_keys_for_mass(m["keys_cum"], m["mass_cum"], target))
-            fe.append(m["fe_err_abs"])
-            std_ratio.append(float(m["score_std"].mean()) / (m["mu_std"] + 1e-12))
+            c = m["curves"]
+            oracle.append(_frac_keys_for_mass(*c["oracle"], target))
+            gauss.append(_frac_keys_for_mass(*c["gauss"], target))
+            mag.append(_frac_keys_for_mass(*c["mag"], target))
+            fe.append(m["fe_err_abs"]); fe_mag.append(m["fe_err_mag"])
+            pr.append(m["within_pr_massw"])
             upper_ok = upper_ok and m["upper_ok"]
+        mean = lambda xs: float(torch.tensor(xs).mean())
         out[name] = {
-            "frac_keys_for_99pct_mass": float(torch.tensor(fracs).mean()),
-            "free_energy_err_nats": float(torch.tensor(fe).mean()),
-            "within_over_between_score_spread": float(torch.tensor(std_ratio).mean()),
+            "frac_keys_oracle": mean(oracle),        # best possible (rank by true mass)
+            "frac_keys_gauss": mean(gauss),          # rank by Gaussian moment estimate
+            "frac_keys_mag": mean(mag),              # rank by magnitude estimate (your hypothesis)
+            "frac_keys_for_99pct_mass": mean(oracle),  # alias (back-compat)
+            "free_energy_err_nats": mean(fe),
+            "free_energy_err_mag_nats": mean(fe_mag),
+            "within_cluster_participation": mean(pr),
             "radius_bound_valid": upper_ok,
         }
     return out
@@ -191,7 +254,7 @@ def main() -> None:
     p.add_argument("--kv-head", type=int, default=0)
     p.add_argument("--prefill", type=int, default=1024)
     p.add_argument("--steps", type=int, default=32)
-    p.add_argument("--block", type=int, default=16)
+    p.add_argument("--block", type=int, nargs="+", default=[16])
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = p.parse_args()
 
@@ -201,16 +264,21 @@ def main() -> None:
                              device=args.device)[0]
 
     per_layer = {}
-    print(f"{'layer':>6} {'scheme':>12} {'frac_keys@99%':>14} {'fe_err_nats':>12} {'within/between':>15}")
+    print(f"{'layer':>5} {'B':>3} {'scheme':>13} {'oracle':>7} {'gauss':>7} {'mag':>7} "
+          f"{'within_PR':>9}   (frac keys @ 99% mass, by ranking)")
     for layer in args.layers:
         K, Q = _capture(model, chunk, layer=layer, kv_head=args.kv_head,
                         prefill=args.prefill, steps=args.steps, device=args.device)
-        s = summarize(K.cpu(), Q.cpu(), B=args.block)
-        per_layer[str(layer)] = s
-        for scheme in ("kmeans", "contiguous", "random"):
-            r = s[scheme]
-            print(f"{layer:>6} {scheme:>12} {r['frac_keys_for_99pct_mass']*100:>13.1f}% "
-                  f"{r['free_energy_err_nats']:>12.3f} {r['within_over_between_score_spread']:>15.3f}")
+        per_block = {}
+        for B in args.block:
+            s = summarize(K.cpu(), Q.cpu(), B=B)
+            per_block[str(B)] = s
+            for scheme in ("kmeans", "kmeans_sphere", "kmeans_qw", "random"):
+                r = s[scheme]
+                print(f"{layer:>5} {B:>3} {scheme:>13} {r['frac_keys_oracle']*100:>6.1f}% "
+                      f"{r['frac_keys_gauss']*100:>6.1f}% {r['frac_keys_mag']*100:>6.1f}% "
+                      f"{r['within_cluster_participation']:>9.2f}")
+        per_layer[str(layer)] = per_block
 
     payload = stamp({"kind": "cluster_diagnostic", "model": args.model, "block": args.block,
                      "kv_head": args.kv_head, "prefill": args.prefill, "steps": args.steps,
