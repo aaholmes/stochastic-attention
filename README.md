@@ -43,11 +43,15 @@ Its two gates pass: every `santa*` mean matches `dense` within Monte-Carlo error
 
 **The hybrid estimator (Idea 1 — the main contribution).** `santa_hybrid` computes the top-`k_h` highest-weight keys exactly and samples only the renormalized remainder. It is proven unbiased (the gate holds for every `k_h` and tail-sampler combination), and at a *matched read budget* it cuts variance sharply — e.g. on a concentrated distribution, **8× lower** variance than plain systematic sampling at `k_h=4`, growing to **32× lower** at `k_h=16`, exactly as predicted (the win grows with the head's mass share).
 
+![Variance convergence vs total sample budget](docs/variance_convergence.png)
+
+*Estimator error (variance-trace) vs the total read budget, log-log. For the hybrid the budget counts **both** halves — the exact head and the sampled tail (`k_h + S_tail`) — so every curve is compared at equal cost. Plain i.i.d. sampling falls as `1/S` (slope −1); structured sampling is steeper; and the semi-stochastic hybrids fall faster still (slopes −1.9 to −2.1), sitting orders of magnitude lower at the same budget. Regenerate with `uv run python -m ssa.harness.plot_variance`.*
+
 **Real-model integration (end-to-end perplexity).** The estimators now run inside the sibling [`../llms`](../llms) Qwen3 engine, swapped in at decode time (the prefill stays exact) via a small, generic attention hook added to that engine — `ssa` never forks it. A teacher-forced perplexity harness scores real next-token predictions made under sampled attention, and a sweep compares **perplexity loss vs value-read fraction** across `dense` / `santa_sys` / `santa_hybrid` splits — the end-to-end analog of the variance result. The whole pipeline is validated on a tiny CPU model (faithfully reproduces the exact baseline through the real forward pass); the actual Qwen3-4B run is one command away (`python -m ssa.harness.ppl_sweep`, deferred because it needs the GPU + weights).
 
 All **49 tests pass**, with no model download or GPU required. Run them with `uv run pytest`; `uv run python -m ssa.harness.variance` prints the sampler slopes and writes a stamped result file.
 
-**Not yet built:** the variance-vs-`k_h` figure, the executed Qwen3-4B perplexity sweep, block sampling, reuse/resident caching (Ideas 2–3), and the microbench phase.
+**Not yet built:** the executed Qwen3-4B perplexity sweep, block sampling, reuse/resident caching (Ideas 2–3), and the microbench phase.
 
 ## Repository
 
