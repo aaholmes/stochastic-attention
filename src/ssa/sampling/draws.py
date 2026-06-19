@@ -51,9 +51,14 @@ def systematic_indices(A: torch.Tensor, S: int, *, generator: torch.Generator) -
 
 
 def unique_counts(idx: torch.Tensor) -> torch.Tensor:
-    """Per-head count of distinct sampled indices. ``idx``: ``[H, S]`` -> ``[H]``."""
-    H = idx.shape[0]
-    return torch.tensor(
-        [int(idx[h].unique().numel()) for h in range(H)],
-        device=idx.device,
-    )
+    """Per-head count of distinct sampled indices. ``idx``: ``[H, S]`` -> ``[H]``.
+
+    Fully vectorized (sort each row, count value changes) so it adds no per-head
+    Python loop or host sync on the decode hot path: distinct = 1 + #(jumps).
+    """
+    H, S = idx.shape
+    if S == 0:
+        return torch.zeros(H, dtype=torch.long, device=idx.device)
+    s, _ = idx.sort(dim=1)
+    jumps = (s[:, 1:] != s[:, :-1]).sum(dim=1)
+    return jumps + 1

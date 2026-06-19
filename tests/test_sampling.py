@@ -147,3 +147,15 @@ def test_unique_counts_bounded():
     counts = unique_counts(idx)
     assert counts.shape == (4,)
     assert torch.all(counts <= 100) and torch.all(counts <= 32) and torch.all(counts >= 1)
+
+
+def test_unique_counts_matches_reference():
+    # Vectorized count must equal the per-row torch.unique reference, incl. edges.
+    A = _softmax_weights(6, 20)
+    g = torch.Generator().manual_seed(8)
+    idx = iid_indices(A, 37, generator=g)
+    ref = torch.tensor([int(idx[h].unique().numel()) for h in range(idx.shape[0])])
+    torch.testing.assert_close(unique_counts(idx), ref)
+    # empty draw -> zeros
+    empty = torch.empty(3, 0, dtype=torch.long)
+    assert torch.equal(unique_counts(empty), torch.zeros(3, dtype=torch.long))

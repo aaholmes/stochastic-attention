@@ -46,30 +46,43 @@ def run_sweep(
     prefill_len: int = 32,
     n_runs: int = 3,
 ) -> list[dict]:
-    """Run each condition; sampling conditions are averaged over ``n_runs`` seeds."""
+    """Run each condition; sampling conditions are averaged over ``n_runs`` seeds.
+
+    Each result carries ``wall_seconds`` (compute time for that condition) and
+    ``sec_per_token`` so two sweeps can be compared for performance.
+    """
+    import time
+
     results = []
     for impl, cfg in conditions:
+        t0 = time.time()
         if impl == "dense":
             uninstall(model)
             r = decode_ppl(model, chunks, prefill_len=prefill_len)
+            dt = time.time() - t0
             results.append({
                 "impl": impl, "cfg": cfg, "total_budget": None,
                 "ppl_mean": r["ppl"], "ppl_std": 0.0, "read_fraction": 1.0,
                 "token_count": r["token_count"], "n_runs": 1,
+                "wall_seconds": dt, "sec_per_token": dt / max(r["token_count"], 1),
             })
             continue
 
-        ppls, frac = [], 1.0
+        ppls, frac, tokens = [], 1.0, 0
         for run in range(n_runs):
             stats = install(model, impl, base_seed=run, **cfg)
-            ppls.append(decode_ppl(model, chunks, prefill_len=prefill_len)["ppl"])
+            r = decode_ppl(model, chunks, prefill_len=prefill_len)
+            ppls.append(r["ppl"])
+            tokens += r["token_count"]
             frac = stats.read_fraction
             uninstall(model)
+        dt = time.time() - t0
         t = torch.tensor(ppls)
         results.append({
             "impl": impl, "cfg": cfg, "total_budget": _total_budget(impl, cfg),
             "ppl_mean": float(t.mean()), "ppl_std": float(t.std(unbiased=False)),
             "read_fraction": frac, "n_runs": n_runs,
+            "wall_seconds": dt, "sec_per_token": dt / max(tokens, 1),
         })
     return results
 
@@ -77,15 +90,19 @@ def run_sweep(
 def _format_table(results: list[dict]) -> str:
     dense = next((r for r in results if r["impl"] == "dense"), None)
     base = dense["ppl_mean"] if dense else None
-    lines = [f"{'condition':28s} {'budget':>7s} {'read%':>7s} {'ppl':>10s} {'Δppl%':>8s}"]
+    lines = [f"{'condition':28s} {'budget':>7s} {'read%':>7s} {'ppl':>10s} {'Δppl%':>8s} "
+             f"{'sec':>7s} {'ms/tok':>7s}"]
     for r in results:
         label = r["impl"] + (f" {r['cfg']}" if r["cfg"] else "")
         budget = "" if r["total_budget"] is None else str(r["total_budget"])
         dppl = "" if base is None else f"{100 * (r['ppl_mean'] - base) / base:+.2f}"
         lines.append(
             f"{label:28s} {budget:>7s} {100*r['read_fraction']:>6.1f}% "
-            f"{r['ppl_mean']:>10.4f} {dppl:>8s}"
+            f"{r['ppl_mean']:>10.4f} {dppl:>8s} "
+            f"{r.get('wall_seconds', 0):>7.1f} {1000*r.get('sec_per_token', 0):>7.1f}"
         )
+    total = sum(r.get("wall_seconds", 0) for r in results)
+    lines.append(f"{'TOTAL':28s} {'':>7s} {'':>7s} {'':>10s} {'':>8s} {total:>7.1f}")
     return "\n".join(lines)
 
 
@@ -103,7 +120,7 @@ def _wikitext_chunks(model_id: str, *, max_chunks: int, chunk_len: int, device: 
     from transformers import AutoTokenizer
 
     tok = AutoTokenizer.from_pretrained(model_id)
-    ds = load_dataset("wikitext", "wikitext-103-raw-v1", split="test")
+    ds = load_dataset("wikitext", "wikitext-103-v1", split="test")
     text = "\n\n".join(t for t in ds["text"] if t.strip())
     ids = tok(text, return_tensors="pt").input_ids[0]
     chunks = []
@@ -135,7 +152,7 @@ def main() -> None:
     results = run_sweep(model, chunks, prefill_len=args.prefill, n_runs=args.n_runs)
 
     payload = stamp({
-        "phase": "C", "model": args.model, "dataset": "wikitext-103-raw-v1/test",
+        "phase": "C", "model": args.model, "dataset": "wikitext-103-v1/test",
         "chunk_len": args.chunk_len, "prefill_len": args.prefill,
         "max_chunks": args.max_chunks, "n_runs": args.n_runs, "results": results,
     })

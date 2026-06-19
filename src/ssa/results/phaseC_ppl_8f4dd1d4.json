@@ -1,0 +1,103 @@
+{
+  "git_sha": "8f4dd1d4dd3891e108e3db4db07c33e94e6068aa",
+  "torch_version": "2.12.1+cu130",
+  "cuda_version": "13.0",
+  "python_version": "3.13.5",
+  "platform": "Linux-6.8.0-124-generic-x86_64-with-glibc2.39",
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 5060 Ti",
+    "capability": [
+      12,
+      0
+    ],
+    "driver": "13.0"
+  },
+  "phase": "C",
+  "model": "Qwen/Qwen3-4B",
+  "dataset": "wikitext-103-v1/test",
+  "chunk_len": 256,
+  "prefill_len": 64,
+  "max_chunks": 2,
+  "n_runs": 1,
+  "results": [
+    {
+      "impl": "dense",
+      "cfg": {},
+      "total_budget": null,
+      "ppl_mean": 16.557794608465162,
+      "ppl_std": 0.0,
+      "read_fraction": 1.0,
+      "token_count": 382,
+      "n_runs": 1,
+      "wall_seconds": 10.158339738845825,
+      "sec_per_token": 0.026592512405355564
+    },
+    {
+      "impl": "santa_sys",
+      "cfg": {
+        "S": 16
+      },
+      "total_budget": 16,
+      "ppl_mean": 18.01381492614746,
+      "ppl_std": 0.0,
+      "read_fraction": 0.04138273069371728,
+      "n_runs": 1,
+      "wall_seconds": 11.735921859741211,
+      "sec_per_token": 0.030722308533353955
+    },
+    {
+      "impl": "santa_sys",
+      "cfg": {
+        "S": 64
+      },
+      "total_budget": 64,
+      "ppl_mean": 16.905492782592773,
+      "ppl_std": 0.0,
+      "read_fraction": 0.10038140759071408,
+      "n_runs": 1,
+      "wall_seconds": 11.668404340744019,
+      "sec_per_token": 0.030545561101424132
+    },
+    {
+      "impl": "santa_sys",
+      "cfg": {
+        "S": 256
+      },
+      "total_budget": 256,
+      "ppl_mean": 16.591569900512695,
+      "ppl_std": 0.0,
+      "read_fraction": 0.21488519283558755,
+      "n_runs": 1,
+      "wall_seconds": 11.95118498802185,
+      "sec_per_token": 0.03128582457597343
+    },
+    {
+      "impl": "santa_hybrid",
+      "cfg": {
+        "k_h": 8,
+        "S": 56
+      },
+      "total_budget": 64,
+      "ppl_mean": 16.70563507080078,
+      "ppl_std": 0.0,
+      "read_fraction": 0.290432797843041,
+      "n_runs": 1,
+      "wall_seconds": 12.347416162490845,
+      "sec_per_token": 0.03232307895940012
+    },
+    {
+      "impl": "santa_hybrid",
+      "cfg": {
+        "k_h": 32,
+        "S": 32
+      },
+      "total_budget": 64,
+      "ppl_mean": 16.61479377746582,
+      "ppl_std": 0.0,
+      "read_fraction": 0.38768647855766436,
+      "n_runs": 1,
+      "wall_seconds": 12.28073501586914,
+      "sec_per_token": 0.03214852098395063
+    }
+  ]
+}
