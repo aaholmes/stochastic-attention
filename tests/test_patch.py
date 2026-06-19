@@ -44,6 +44,18 @@ def test_read_stats_dense_reads_everything():
     assert stats.avg_n_k == n_k
 
 
+def test_read_stats_topk_reads_k():
+    H, H_kv, d, n_k = 4, 2, 8, 40
+    q = torch.randn(1, H, 1, d)
+    fk = torch.randn(1, H_kv, n_k, d)
+    fv = torch.randn(1, H_kv, n_k, d)
+    stats = ReadStats()
+    op = make_decode_op("topk", base_seed=0, stats=stats, cfg={"k": 4})
+    op(q, fk, fv, scale=d ** -0.5, layer_idx=0)
+    assert stats.avg_reads == 4  # exactly the top-k rows, not all n_k
+    assert stats.read_fraction == 4 / n_k
+
+
 def test_read_stats_sampler_reads_fewer():
     H, H_kv, d, n_k = 4, 2, 8, 64
     q = torch.randn(1, H, 1, d)

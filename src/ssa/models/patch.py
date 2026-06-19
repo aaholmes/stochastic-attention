@@ -81,8 +81,12 @@ def make_decode_op(impl: str, *, base_seed: int, stats: ReadStats, cfg: dict):
             # ~all mass the tail is discarded, so reads saturate at n_k).
             reads = (min(k_h, n_k) + info.unique.to(qd.device).float()).clamp_(max=float(n_k))
         else:
-            out = attn(qd, K, V, impl=impl, **call_cfg)        # dense / topk: read all
-            reads = torch.full((qd.shape[0],), float(n_k), device=qd.device)
+            out = attn(qd, K, V, impl=impl, **call_cfg)
+            if impl == "topk":                                  # reads exactly the top-k rows
+                kk = min(int(cfg.get("k", n_k)), n_k)
+                reads = torch.full((qd.shape[0],), float(kk), device=qd.device)
+            else:                                               # dense: reads everything
+                reads = torch.full((qd.shape[0],), float(n_k), device=qd.device)
 
         stats.record(n_k=n_k, reads_per_head=reads)
         counter["step"] += 1

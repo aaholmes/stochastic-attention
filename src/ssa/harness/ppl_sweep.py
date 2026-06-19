@@ -42,6 +42,29 @@ DEFAULT_CONDITIONS = [
     ("santa_hybrid", {"k_h": 128, "S": 128}),  # total 256
 ]
 
+# Cheap-end set: probes the low-budget regime where the deterministic head should
+# pay off, plus a det:stoch ratio sweep and the biased top-k baseline. Deliberately
+# omits santa_sys (reuse the existing de-risk frontier — overlay at plot time).
+CHEAP_CONDITIONS = [
+    ("dense", {}),
+    # top-k biased baseline (deterministic; reads exactly k rows)
+    ("topk", {"k": 1}), ("topk", {"k": 2}), ("topk", {"k": 4}), ("topk", {"k": 8}),
+    ("topk", {"k": 16}), ("topk", {"k": 32}), ("topk", {"k": 64}),
+    # semistoch "1 exact + rest stochastic" across budgets — the cheap-end frontier
+    ("santa_hybrid", {"k_h": 1, "S": 3}),     # total 4
+    ("santa_hybrid", {"k_h": 1, "S": 7}),     # total 8
+    ("santa_hybrid", {"k_h": 1, "S": 15}),    # total 16
+    ("santa_hybrid", {"k_h": 1, "S": 31}),    # total 32
+    ("santa_hybrid", {"k_h": 1, "S": 63}),    # total 64
+    # det:stoch ratio sweep at fixed total budgets 16 and 32
+    ("santa_hybrid", {"k_h": 4, "S": 12}),    # total 16
+    ("santa_hybrid", {"k_h": 8, "S": 8}),     # total 16
+    ("santa_hybrid", {"k_h": 8, "S": 24}),    # total 32
+    ("santa_hybrid", {"k_h": 16, "S": 16}),   # total 32
+]
+
+CONDITION_PRESETS = {"full": DEFAULT_CONDITIONS, "cheap": CHEAP_CONDITIONS}
+
 
 def _total_budget(impl: str, cfg: dict) -> int | None:
     if impl == "dense":
@@ -60,6 +83,17 @@ def _run_condition(model, chunks, impl, cfg, *, prefill_len, n_runs) -> dict:
         return {
             "impl": impl, "cfg": cfg, "total_budget": None,
             "ppl_mean": r["ppl"], "ppl_std": 0.0, "read_fraction": 1.0,
+            "token_count": r["token_count"], "n_runs": 1,
+            "wall_seconds": dt, "sec_per_token": dt / max(r["token_count"], 1),
+        }
+    if impl == "topk":  # deterministic biased baseline — single run, reads top-k rows
+        stats = install(model, "topk", **cfg)
+        r = decode_ppl(model, chunks, prefill_len=prefill_len)
+        uninstall(model)
+        dt = time.time() - t0
+        return {
+            "impl": impl, "cfg": cfg, "total_budget": int(cfg.get("k", 0)),
+            "ppl_mean": r["ppl"], "ppl_std": 0.0, "read_fraction": stats.read_fraction,
             "token_count": r["token_count"], "n_runs": 1,
             "wall_seconds": dt, "sec_per_token": dt / max(r["token_count"], 1),
         }
@@ -173,6 +207,8 @@ def main() -> None:
     p.add_argument("--chunk-len", type=int, default=512)
     p.add_argument("--prefill", type=int, default=128)
     p.add_argument("--n-runs", type=int, default=3)
+    p.add_argument("--preset", default="full", choices=list(CONDITION_PRESETS),
+                   help="condition set: 'full' frontier or 'cheap' low-budget probe")
     p.add_argument("--tag", default="", help="suffix for the output filename")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = p.parse_args()
@@ -209,7 +245,8 @@ def main() -> None:
         path.write_text(json.dumps(make_payload(results_so_far, False), indent=2))
 
     results = run_sweep(
-        model, chunks, prefill_len=args.prefill, n_runs=args.n_runs, on_condition=on_condition
+        model, chunks, conditions=CONDITION_PRESETS[args.preset],
+        prefill_len=args.prefill, n_runs=args.n_runs, on_condition=on_condition
     )
     path.write_text(json.dumps(make_payload(results, True), indent=2))
     print("\n" + _format_table(results))
