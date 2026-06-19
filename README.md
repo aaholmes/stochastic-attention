@@ -76,6 +76,52 @@ This is on *spatially unstructured* synthetic attention; block sampling's real p
 
 **Not yet built / next:** the RoPE-vs-content clustering diagnostic that gates Idea 7 (content-clustered KV layout, the proposed fix for block sampling + a route to skipping key reads too); wiring `santa_block` into the real model; reuse/resident caching (Ideas 2–3), cross-head sharing (Ideas 4–5), large sparse value memory (Idea 6); and the kernel microbenchmark.
 
+## Glossary — every named concept, one line
+
+The through-line: the *physics* of a cluster's attention mass (left) meets the *computer science* of finding it cheaply (right), and they join at "estimate a cluster's free energy from its moments, bounded well enough to prune."
+
+**Statistical mechanics & probability**
+- **Boltzmann / Gibbs distribution** — `p_i ∝ e^{−E_i/T}`; softmax attention *is* this, with score `q·k` = −energy, so the weights are a Gibbs distribution over tokens.
+- **Partition function `Z`** — the normalizer `Σ e^{score}` (the softmax denominator); a cluster's mass is its own partition function.
+- **Free energy / log-sum-exp** — `log Z`, the smooth max; the cluster's "effective score" we sample by, `log⟨e^{q·k}⟩_b`, is its free energy.
+- **Jensen's inequality** — for convex `f`, `E[f(X)] ≥ f(E[X])`; the gap is why a spread cluster (mean-of-exp) samples *hotter* than its center (exp-of-mean).
+- **Cumulants / cumulant generating function** — derivatives of `log Z` give mean, variance, …; their series *is* `s_b^eff = mean + ½var + …`.
+- **Exponential family / log-normalizer** — family where `∇log Z = mean`, `∇²log Z = covariance`; why `½ qᵀΣ_b q` is the natural second-order term.
+- **Fisher information** — the curvature `∇²log Z = covariance`; here exactly the fluctuation term `qᵀΣ_b q`.
+- **Laplace / saddle-point approximation** — approximate a peaked sum by a Gaussian around its max; our mass estimate `e^{q·c_b + ½qᵀΣ_b q}` is this for a cluster.
+- **Mean-field / saddle value** — collapse a distribution to its average; `e^{q·c_b}` (exp of the mean) is the mean-field estimate that misses fluctuations.
+- **One-loop correction** — the Gaussian-fluctuation term past the saddle; here the `½ qᵀΣ_b q`.
+- **Chebyshev–Markov moment problem** — the tightest bound on `E[f(X)]` given a few moments + support, attained by an extremal few-point distribution; gives a mass upper bound *sharper* than "all members at the max."
+- **Participation ratio (≡ inverse Simpson ≡ 1/Herfindahl)** — `1/Σ p²`, the effective number of components carrying the mass; attention's is **~14 of ~1500** tokens.
+- **Entropy** — `−Σ p log p`, another concentration gauge; `e^{entropy} ≈ 14` cross-checks the participation ratio.
+
+**Estimation & variance reduction**
+- **Monte Carlo** — estimate a sum by random draws; the whole sampled-attention idea.
+- **Importance sampling** — unbiased estimation under a cheap proposal, reweighting by true/proposal; lets us sample clusters by a centroid proposal yet stay exact.
+- **Rao–Blackwellization** — replace a random estimate by its exact conditional expectation to cut variance; computing the deterministic head *exactly* is literally this.
+- **Control variate** — subtract a correlated, known-mean term to reduce variance; the other lens on the exact-head hybrid.
+- **Stratified sampling** — equal-mass strata, one draw each; `santa_strat`.
+- **Systematic sampling** — one shared offset, evenly spaced (the "comb"); `santa_sys`.
+- **Cauchy–Schwarz** — `|q·δ| ≤ ‖q‖‖δ‖`; turns a cluster's radius `R_b` into the max-score bound `q·c_b + ‖q‖R_b`.
+
+**Search & data structures**
+- **Maximum Inner Product Search (MIPS)** — find the keys with largest `q·k`; "never miss the hottest token" is top-1 MIPS.
+- **Branch and bound** — prune a search with cheap bounds that rule regions out; the radius bound skips clusters that provably can't hold the max.
+- **Fagin's Threshold Algorithm (TA/NRA)** — provably read-*minimal* top-k retrieval via a running threshold; our "read the best, set `s*`, prune the rest" is this.
+- **k-means / Lloyd's algorithm** — cluster points to minimize within-cluster radius; the baseline key-grouping (we want a query-aware variant instead).
+- **Mahalanobis distance** — covariance-weighted distance; the *right* metric, since what matters is `qᵀΣq` along query directions, not Euclidean radius.
+- **Cuckoo hashing** — insertion by displacement chains where one empty slot propagates; the model for online KV-cluster maintenance.
+- **Gram matrix** — the matrix of pairwise `k_i·k_j`; the "relative dot products" fixing a cluster's within-block score geometry.
+
+**Attention / ML prior art**
+- **RoPE (Rotary Position Embedding)** — rotates `q,k` by position so the score depends only on relative offset; its fast high-frequency rotation may scramble content-clustering.
+- **Modern Hopfield Networks ("Hopfield Networks is All You Need")** — derives attention as the fixed point of an *energy/free-energy* minimization; closest prior art to our energy framing (and the source of the "…is All You Need" riff).
+- **Reformer (LSH attention)** — buckets keys by locality-sensitive hashing; prior art for grouping keys, but *biased* hard selection.
+- **Routing Transformer** — k-means-clusters keys and attends within clusters; closest "cluster the keys" prior art, again biased.
+- **Quest / ClusterKV** — select KV blocks by representative vectors at decode; prior art for block selection, biased rather than unbiased-sampled.
+- **Amdahl's law** — total speedup is capped by the part you *don't* accelerate (`1/w`, `w` = weight-read share); why faster attention can't beat the weight-bandwidth ceiling at decode.
+- **SANTA / S²ANTA** — the paper we reproduce: unbiased semi-stochastic sampling of the KV cache; everything here builds on its estimator.
+
 ## Repository
 
 - `PROTOTYPE_DESIGN.md` — full spec, phase ordering, and correctness gates. **Read this first** (especially §0.5, the current decisions).
