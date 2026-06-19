@@ -35,7 +35,8 @@ def _delta_pct(r: dict, base: float) -> float:
     return 100.0 * (r["ppl_mean"] - base) / base
 
 
-def plot_ppl_frontier(results: list[dict], out_path, *, title: str, ymax: float | None = None) -> None:
+def plot_ppl_frontier(results: list[dict], out_path, *, title: str,
+                      ymax: float | None = None, ymin: float | None = None) -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -73,8 +74,8 @@ def plot_ppl_frontier(results: list[dict], out_path, *, title: str, ymax: float 
         ax.plot(xs, ys, "-s", color=color, markersize=5, label=f"hybrid k_h={kh}", zorder=4)
 
     ax.axhline(0.0, color="gray", ls=":", lw=1, label="dense (no quality loss)")
-    if ymax is not None:
-        ax.set_ylim(top=ymax)
+    if ymax is not None or ymin is not None:
+        ax.set_ylim(bottom=ymin, top=ymax)
     ax.set_xscale("log")
     ax.set_xlabel("value rows read (% of cache)  —  lower is cheaper")
     ax.set_ylabel("perplexity increase vs dense (%)")
@@ -91,7 +92,8 @@ def main() -> None:
     p.add_argument("results_json", nargs="+")
     p.add_argument("--out", default=None, help="PNG path (default: alongside the first JSON)")
     p.add_argument("--title", default=None)
-    p.add_argument("--ymax", type=float, default=None, help="clip the y-axis for readability")
+    p.add_argument("--ymax", type=float, default=None, help="clip the y-axis top for readability")
+    p.add_argument("--ymin", type=float, default=None, help="clip the y-axis bottom for readability")
     args = p.parse_args()
 
     results, payload = load_results(args.results_json)
@@ -101,7 +103,7 @@ def main() -> None:
         f"PPL vs value-read fraction — {payload.get('model', '?')}, "
         f"ctx={payload.get('chunk_len', '?')}"
     )
-    plot_ppl_frontier(results, out, title=title, ymax=args.ymax)
+    plot_ppl_frontier(results, out, title=title, ymax=args.ymax, ymin=args.ymin)
     print(f"wrote {out}")
 
 
