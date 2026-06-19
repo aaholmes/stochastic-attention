@@ -1,0 +1,212 @@
+{
+  "git_sha": "aaac1d8f9629d27aa480c649a3bcad3adf70e74b",
+  "torch_version": "2.12.1+cu130",
+  "cuda_version": "13.0",
+  "python_version": "3.13.5",
+  "platform": "Linux-6.8.0-124-generic-x86_64-with-glibc2.39",
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 5060 Ti",
+    "capability": [
+      12,
+      0
+    ],
+    "driver": "13.0"
+  },
+  "phase": "C",
+  "model": "Qwen/Qwen3-4B",
+  "dataset": "wikitext-103-v1/test",
+  "chunk_len": 4096,
+  "prefill_len": 2048,
+  "max_chunks": 8,
+  "n_runs": 3,
+  "complete": true,
+  "results": [
+    {
+      "impl": "dense",
+      "cfg": {},
+      "total_budget": null,
+      "ppl_mean": 11.54721680041647,
+      "ppl_std": 0.0,
+      "read_fraction": 1.0,
+      "token_count": 16376,
+      "n_runs": 1,
+      "wall_seconds": 583.2204236984253,
+      "sec_per_token": 0.035614339502834956
+    },
+    {
+      "impl": "santa_sys",
+      "cfg": {
+        "S": 8
+      },
+      "total_budget": 8,
+      "ppl_mean": 16.10200309753418,
+      "ppl_std": 0.11946369707584381,
+      "read_fraction": 0.0017367857007979139,
+      "n_runs": 3,
+      "wall_seconds": 2591.6402180194855,
+      "sec_per_token": 0.05275281342654872
+    },
+    {
+      "impl": "santa_sys",
+      "cfg": {
+        "S": 16
+      },
+      "total_budget": 16,
+      "ppl_mean": 12.976506233215332,
+      "ppl_std": 0.04774944856762886,
+      "read_fraction": 0.00289280614007576,
+      "n_runs": 3,
+      "wall_seconds": 2596.2787396907806,
+      "sec_per_token": 0.05284723049362442
+    },
+    {
+      "impl": "santa_sys",
+      "cfg": {
+        "S": 32
+      },
+      "total_budget": 32,
+      "ppl_mean": 12.046061515808105,
+      "ppl_std": 0.03869377449154854,
+      "read_fraction": 0.004817801656030919,
+      "n_runs": 3,
+      "wall_seconds": 2596.7762961387634,
+      "sec_per_token": 0.0528573582506669
+    },
+    {
+      "impl": "santa_sys",
+      "cfg": {
+        "S": 64
+      },
+      "total_budget": 64,
+      "ppl_mean": 11.750446319580078,
+      "ppl_std": 0.01928781531751156,
+      "read_fraction": 0.007960902846295867,
+      "n_runs": 3,
+      "wall_seconds": 2606.683662891388,
+      "sec_per_token": 0.05305902261218425
+    },
+    {
+      "impl": "santa_sys",
+      "cfg": {
+        "S": 128
+      },
+      "total_budget": 128,
+      "ppl_mean": 11.652783393859863,
+      "ppl_std": 0.013461112044751644,
+      "read_fraction": 0.013166166524785798,
+      "n_runs": 3,
+      "wall_seconds": 2612.936946630478,
+      "sec_per_token": 0.053186308146687795
+    },
+    {
+      "impl": "santa_sys",
+      "cfg": {
+        "S": 256
+      },
+      "total_budget": 256,
+      "ppl_mean": 11.600628852844238,
+      "ppl_std": 0.005778265185654163,
+      "read_fraction": 0.021691167375505596,
+      "n_runs": 3,
+      "wall_seconds": 2641.2075564861298,
+      "sec_per_token": 0.053761756157102464
+    },
+    {
+      "impl": "santa_sys",
+      "cfg": {
+        "S": 512
+      },
+      "total_budget": 512,
+      "ppl_mean": 11.568695068359375,
+      "ppl_std": 0.006763755809515715,
+      "read_fraction": 0.03533100330818189,
+      "n_runs": 3,
+      "wall_seconds": 2660.2166283130646,
+      "sec_per_token": 0.05414868564389075
+    },
+    {
+      "impl": "santa_hybrid",
+      "cfg": {
+        "k_h": 8,
+        "S": 56
+      },
+      "total_budget": 64,
+      "ppl_mean": 11.664284706115723,
+      "ppl_std": 0.013240152038633823,
+      "read_fraction": 0.018447206132039116,
+      "n_runs": 3,
+      "wall_seconds": 2723.597480773926,
+      "sec_per_token": 0.05543880232808023
+    },
+    {
+      "impl": "santa_hybrid",
+      "cfg": {
+        "k_h": 16,
+        "S": 48
+      },
+      "total_budget": 64,
+      "ppl_mean": 11.61920166015625,
+      "ppl_std": 0.0033767835702747107,
+      "read_fraction": 0.02020883547239309,
+      "n_runs": 3,
+      "wall_seconds": 2730.414171218872,
+      "sec_per_token": 0.0555775560010355
+    },
+    {
+      "impl": "santa_hybrid",
+      "cfg": {
+        "k_h": 32,
+        "S": 32
+      },
+      "total_budget": 64,
+      "ppl_mean": 11.674701690673828,
+      "ppl_std": 0.02557544782757759,
+      "read_fraction": 0.020819355289760366,
+      "n_runs": 3,
+      "wall_seconds": 2722.6771919727325,
+      "sec_per_token": 0.055420069857774236
+    },
+    {
+      "impl": "santa_hybrid",
+      "cfg": {
+        "k_h": 32,
+        "S": 224
+      },
+      "total_budget": 256,
+      "ppl_mean": 11.558222770690918,
+      "ppl_std": 0.003654748434200883,
+      "read_fraction": 0.07186084028396313,
+      "n_runs": 3,
+      "wall_seconds": 2757.9015698432922,
+      "sec_per_token": 0.056137061753853044
+    },
+    {
+      "impl": "santa_hybrid",
+      "cfg": {
+        "k_h": 64,
+        "S": 192
+      },
+      "total_budget": 256,
+      "ppl_mean": 11.55701732635498,
+      "ppl_std": 0.005460119340568781,
+      "read_fraction": 0.07979912876847724,
+      "n_runs": 3,
+      "wall_seconds": 2765.0171003341675,
+      "sec_per_token": 0.05628189831326672
+    },
+    {
+      "impl": "santa_hybrid",
+      "cfg": {
+        "k_h": 128,
+        "S": 128
+      },
+      "total_budget": 256,
+      "ppl_mean": 11.559094429016113,
+      "ppl_std": 0.004474053159356117,
+      "read_fraction": 0.08321910113353446,
+      "n_runs": 3,
+      "wall_seconds": 2748.687063932419,
+      "sec_per_token": 0.05594950056856413
+    }
+  ]
+}
