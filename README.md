@@ -2,7 +2,21 @@
 
 A research-validation prototype exploring whether you can make LLM text generation cheaper by **randomly sampling** the attention cache instead of reading all of it — without distorting the model's output on average.
 
-> **Status.** Statistical core, the hybrid estimator (Idea 1), and contiguous-block sampling are built and gated; all run end-to-end inside a real Qwen3-4B with a perplexity harness. Headline result: random sampling reaches dense-model quality reading **~3.5% of cached values (~28× fewer)**, and — a careful, honest finding — the "exact head" hybrid roughly *ties* plain sampling on bytes once you account for how GPU caches dedup repeated reads. `PROTOTYPE_DESIGN.md` is the authoritative spec. Target hardware: a single 16 GB RTX 5060 Ti (Blackwell).
+> **One-line status.** Statistical core + hybrid estimator + contiguous-block sampling built, unbiased, and gated; all running end-to-end in a real Qwen3-4B via a perplexity harness; **85 tests pass** (no GPU/model needed). Authoritative spec: `PROTOTYPE_DESIGN.md`. Hardware: one 16 GB RTX 5060 Ti (Blackwell).
+
+## Executive summary
+
+**Motivation.** At decode time an LLM is bottlenecked by **memory bandwidth, not compute** — each new token re-reads the entire KV cache (plus the weights) from HBM. But attention is a softmax-weighted *average* of cached value vectors — an expectation over a probability distribution — so it can be **estimated by sampling a few values instead of reading all of them, without bias**. We reproduce the SANTA paper's estimator in plain PyTorch and push our own extensions, asking one disciplined question throughout: *how few cache reads can we get away with at no cost to the model's output (in expectation)?*
+
+**Ideas.** (1) **Hybrid** — compute the few highest-weight tokens exactly, sample the diffuse tail (lower variance per sample). (2–3) **Reuse / resident** — recycle or skip reads across decode steps. (4–5) **Cross-head sharing** — one shared sample set / proposal across heads. (6) **Large value memory** — spend the now-cheap V-reads on more value capacity. (7) **Clustered-KV / skip-K** — reorganize the cache by key *content* so cheap per-cluster summaries decide *which* clusters to fetch, attacking the **key** reads that sampling alone can't avoid. All are unbiased by construction (Monte-Carlo / importance sampling), so they change the model's *memory traffic*, never its output.
+
+**Status & honest results.** The statistical core (six estimators + variance harness) and the hybrid are built, proven unbiased, and reproduce the paper's `1/S` variance slopes; everything runs inside a real Qwen3-4B through a clean attention-op hook in the sibling `../llms` engine, scored by a teacher-forced perplexity harness. What we've actually found:
+- **Plain sampling is remarkably good** — dense-model perplexity at **~3.5% of value reads (~28× fewer)** at 4096 context, the read fraction *shrinking* as context grows (attention concentrates).
+- **The exact-head hybrid *ties* plain sampling on bytes** — it wins per-*sample*, but with-replacement collisions let plain sampling read the hot tokens essentially for free (an L2-cache effect) and cancel the head's edge. Measured, mechanism-confirmed, conclusive: the hybrid's value is variance-per-sample, not bytes-per-quality.
+- **Contiguous-block sampling** is unbiased but loses on byte-count for *scattered* attention; its premise needs content-clustered keys.
+- **Cluster diagnostic (the live frontier)** — estimating a cluster's mass from its *moments* is **dead** (attention mass sits on a single token per cluster), **but** ranking clusters by a **magnitude** estimate (cluster by direction + store per-key magnitudes) recovers **near-oracle key-read selection** (~0.2–0.3% of keys at deep layers vs the moment estimate's 6–35%) — reviving the skip-K prize.
+
+**Next stage + our hypothesis.** Wire magnitude-ranked cluster selection into the model and measure perplexity vs **key + value** reads end-to-end. We expect it to **preserve perplexity while reading a small fraction of keys at long-context, concentrated layers** (where the diagnostic showed `mag ≈ oracle`), with the radius/MIPS bound as an unbiased safety net — but to **help little at early/diffuse layers**, and (per **Amdahl**, since weights dominate decode bandwidth) to cut *bytes* without necessarily cutting *wall-clock* on this card. Net expectation: a real, measurable **K + V read reduction at fixed quality**, strongest at long context — a genuine step beyond SANTA's V-only saving — whose hardware speedup stays an open, hardware-dependent question we deliberately don't chase here.
 
 ## The problem, briefly
 
@@ -12,7 +26,7 @@ When an LLM generates text one token at a time, each new token must "attend" to 
 
 ## The idea
 
-If attention is an average over a probability distribution, you can **estimate** it by sampling: draw a handful of value rows according to their attention weights and average them. This is a standard Monte-Carlo estimator, and it is **unbiased** — its expected value equals the true dense attention output — with error that shrinks as roughly `1/S` for `S` samples. We reproduce this published result (the "SANTA" paper) in plain PyTorch, then test three of our own extensions:
+If attention is an average over a probability distribution, you can **estimate** it by sampling: draw a handful of value rows according to their attention weights and average them. This is a standard Monte-Carlo estimator, and it is **unbiased** — its expected value equals the true dense attention output — with error that shrinks as roughly `1/S` for `S` samples. We reproduce this published result (the "SANTA" paper) in plain PyTorch, then test several of our own extensions (the headline three are below; the full set — cross-head sharing, large value memory, clustered-KV / skip-K — is in `PROTOTYPE_DESIGN.md`):
 
 1. **Hybrid (deterministic head + sampled tail) — main contribution.** Compute the few highest-weight tokens *exactly* (zero error) and only sample the diffuse remainder. At the same read budget this should cut the estimator's variance — and the win grows the more attention mass sits in those top tokens.
 2. **Reuse across steps.** Recycle values sampled on the previous decode step, reweighted by an importance ratio, to avoid re-reading memory — *if* you can prove the reweighting keeps the estimator unbiased and *if* those values are still cache-resident.
@@ -70,11 +84,11 @@ Unbiased for every block size (gate passes; `B=1`≡`santa`, `B≥n_k`≡`dense`
 
 This is on *spatially unstructured* synthetic attention; block sampling's real premise is that attention mass clusters *contiguously*, plus that contiguous reads are cheaper-per-byte on hardware — neither of which this byte-count harness captures.
 
-**The proposed fix (Idea 7 — design doc §3.9): reorganize the KV cache so each contiguous block holds *similar* keys.** Then a block is uniformly hot or cold for any query, so a sampled hot block's rows are all useful. Because block sampling is unbiased for *any* grouping, clustering can never introduce bias — it's a pure efficiency substrate (unlike biased cluster-selection methods like Reformer/Routing-Transformer/Quest). And it unlocks a bigger prize: once keys are clustered, the block *center* `q·c_b` estimates a block's mass without reading its keys — so you could skip reading both K *and* V for cold blocks (with an importance-sampling correction, Idea 5). The make-or-break unknown is RoPE (it rotates keys by position, which may scramble content-clustering), so the next step is a cheap diagnostic on the real model — no kernel — before any clustering code.
+**The proposed fix (Idea 7 — design doc §3.9): reorganize the KV cache so each contiguous block holds *similar* keys.** Then a block is uniformly hot or cold for any query, so a sampled hot block's rows are all useful. Because block sampling is unbiased for *any* grouping, clustering can never introduce bias — it's a pure efficiency substrate (unlike biased cluster-selection methods like Reformer/Routing-Transformer/Quest). And it unlocks a bigger prize — **skipping the *key* reads too** (decide which clusters to fetch from cheap per-cluster summaries). A kernel-free diagnostic on the real model (next section) then settled *how*: estimating a cluster's mass from its moments fails, but a **magnitude-based** estimate works.
 
 ---
 
-**Tests:** all **79 pass** with no model download or GPU required (`uv run pytest`). The real-model sweeps are reproducible on the GPU box via `python -m ssa.harness.ppl_sweep` / `concentration` / `crossover` / `plot_blocks`.
+**Tests:** all **85 pass** with no model download or GPU required (`uv run pytest`). The real-model sweeps are reproducible on the GPU box via `python -m ssa.harness.ppl_sweep` / `concentration` / `crossover` / `plot_blocks` / `cluster_diag`.
 
 **Cluster diagnostic (Idea 7, design doc §3.10).** A kernel-free Step-0 on real Qwen3-4B keys ([`ssa.harness.cluster_diag`](src/ssa/harness/cluster_diag.py)) settled the "skip the key reads too" idea: the *moment-based* free-energy estimate is **dead** (attention mass sits on a single token per cluster — `within_PR≈1` everywhere — so a 2-moment Gaussian can't estimate it), **but** a *magnitude*-based estimate (cluster by direction, store per-key magnitudes, rank by `Σ e^{|k_j|(q·ĉ_b)}`) recovers **near-oracle key-read selection at the concentrated deep layers** (~0.2–0.3% of keys vs the Gaussian's 6–35%). So skip-K is alive via the magnitude route; next is to test it end-to-end (does that selection preserve perplexity?).
 
@@ -82,7 +96,7 @@ This is on *spatially unstructured* synthetic attention; block sampling's real p
 
 ## Glossary — every named concept, one line
 
-The through-line: the *physics* of a cluster's attention mass (left) meets the *computer science* of finding it cheaply (right), and they join at "estimate a cluster's free energy from its moments, bounded well enough to prune."
+The through-line: the *physics* of a cluster's attention mass (left) meets the *computer science* of finding it cheaply (right). We *expected* them to join at "estimate a cluster's free energy from its moments" — but the diagnostic killed that (mass sits on one token per cluster) and the working route turned out to be ranking clusters by a magnitude estimate (§3.10).
 
 **Statistical mechanics & probability**
 - **Boltzmann / Gibbs distribution** — `p_i ∝ e^{−E_i/T}`; softmax attention *is* this, with score `q·k` = −energy, so the weights are a Gibbs distribution over tokens.
