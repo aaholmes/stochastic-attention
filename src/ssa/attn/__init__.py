@@ -44,3 +44,4 @@ def attn(q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, *, impl: str, **cfg)
 from . import dense as _dense  # noqa: E402,F401
 from . import santa as _santa  # noqa: E402,F401
 from . import hybrid as _hybrid  # noqa: E402,F401
+from . import block as _block  # noqa: E402,F401

@@ -2,7 +2,7 @@
 
 A research-validation prototype exploring whether you can make LLM text generation cheaper by **randomly sampling** the attention cache instead of reading all of it — without distorting the model's output on average.
 
-> **Status.** Statistical core + the headline "hybrid" estimator (Idea 1) complete, now wired into a real Qwen3 model with a perplexity harness. All correctness gates pass. `PROTOTYPE_DESIGN.md` is the authoritative spec. Target hardware: a single 16 GB RTX 5060 Ti (Blackwell).
+> **Status.** Statistical core, the hybrid estimator (Idea 1), and contiguous-block sampling are built and gated; all run end-to-end inside a real Qwen3-4B with a perplexity harness. Headline result: random sampling reaches dense-model quality reading **~3.5% of cached values (~28× fewer)**, and — a careful, honest finding — the "exact head" hybrid roughly *ties* plain sampling on bytes once you account for how GPU caches dedup repeated reads. `PROTOTYPE_DESIGN.md` is the authoritative spec. Target hardware: a single 16 GB RTX 5060 Ti (Blackwell).
 
 ## The problem, briefly
 
@@ -28,34 +28,51 @@ This is about **correctness and statistics, not speed** (the real speedup lives 
 
 ## Two design choices worth knowing
 
-- **GPU-friendly block sampling.** Memory is read in contiguous chunks, so we sample ~1–2 KB **blocks** of values rather than scattered single rows. This makes reads coalesced and matches the real unit of on-chip cache residency — but it changes the estimator, so its unbiasedness is derived and tested separately. Variance-vs-block-size at a fixed read budget is a key result.
+- **GPU-friendly block sampling.** Memory is read in contiguous chunks, so we also sample ~1–2 KB **blocks** of values rather than scattered single rows, to match coalesced reads. We derived and tested its unbiasedness separately (it holds for every block size). *Finding so far:* on byte-count it doesn't help unless attention mass clusters contiguously — see results below.
 - **We reuse a sibling project for the model.** The accuracy/microbench phases plug into [`../llms`](../llms) — a from-scratch, HuggingFace-bit-exact Qwen3 inference engine (same author, same GPU) — by swapping its attention op directly, rather than patching HuggingFace internals. The statistics core (`ssa/`) stays standalone.
 
 ## What's built so far
 
-**The statistical core** (validated on tiny random tensors, no model in the loop).
+### 1. The statistical core (tiny random tensors, no model)
 
-- **One swappable interface** `attn(q, K, V, impl=...)` with six implementations: `dense` (exact ground truth), `topk` (biased baseline), the three unbiased samplers `santa` (i.i.d.), `santa_strat` (stratified), `santa_sys` (systematic), and `santa_hybrid` (Idea 1, below).
-- **The sampling mechanics** — per-head CDF construction and inverse-CDF index draws (one shared offset per head for systematic), with with-replacement unique-key counting.
-- **A measurement harness** that estimates each sampler's Monte-Carlo mean and its variance-vs-budget slope, accumulating in float64 so low-precision roundoff is never mistaken for bias. Results are written to `src/ssa/results/` stamped with git SHA, GPU, and library versions.
+- **One swappable interface** `attn(q, K, V, impl=...)` with seven implementations: `dense` (ground truth), `topk` (biased baseline), the unbiased samplers `santa` (i.i.d.), `santa_strat` (stratified), `santa_sys` (systematic), `santa_hybrid` (Idea 1), and `santa_block` (contiguous-block sampling).
+- **A measurement harness** for Monte-Carlo mean + variance-vs-budget, accumulating in float64 so low-precision roundoff is never mistaken for bias. Every result file in `src/ssa/results/` is stamped with git SHA, GPU, and library versions.
 
-Its two gates pass: every `santa*` mean matches `dense` within Monte-Carlo error (*unbiased*), and variance falls as ~`1/S` — measured log-log slopes of −1.0 (i.i.d.), −1.3 (stratified), −1.5 (systematic), reproducing the paper's pattern that structured sampling beats i.i.d.
+Both gates pass: every unbiased estimator's mean matches `dense` within Monte-Carlo error, and variance falls as ~`1/S` (slopes −1.0 i.i.d. / −1.3 stratified / −1.5 systematic — structured sampling beats i.i.d., reproducing the paper).
 
-**The hybrid estimator (Idea 1 — the main contribution).** `santa_hybrid` computes the top-`k_h` highest-weight keys exactly and samples only the renormalized remainder. It is proven unbiased (the gate holds for every `k_h` and tail-sampler combination), and at a *matched read budget* it cuts variance sharply — e.g. on a concentrated distribution, **8× lower** variance than plain systematic sampling at `k_h=4`, growing to **32× lower** at `k_h=16`, exactly as predicted (the win grows with the head's mass share).
+### 2. The hybrid estimator (Idea 1): a real win *per sample*
+
+`santa_hybrid` computes the top-`k_h` keys exactly and samples only the renormalized remainder. Proven unbiased for every `k_h`/sampler combination, and at a matched **sample** budget it cuts variance sharply — **8× lower at `k_h=4`, 32× lower at `k_h=16`** vs plain systematic, growing with the head's mass share.
 
 ![Variance convergence vs total sample budget](docs/variance_convergence.png)
 
-*Estimator error (variance-trace) vs the total read budget, log-log. For the hybrid the budget counts **both** halves — the exact head and the sampled tail (`k_h + S_tail`) — so every curve is compared at equal cost. Plain i.i.d. sampling falls as `1/S` (slope −1); structured sampling is steeper; and the semi-stochastic hybrids fall faster still (slopes −1.9 to −2.1), sitting orders of magnitude lower at the same budget. Regenerate with `uv run python -m ssa.harness.plot_variance`.*
+*Variance vs total sample budget (log-log). For the hybrid the budget counts **both** the exact head and the sampled tail (`k_h + S_tail`). Plain i.i.d. falls as `1/S` (slope −1); systematic is steeper; the hybrids fall faster still (−1.9 to −2.1).*
 
-**Real-model integration (end-to-end perplexity).** The estimators now run inside the sibling [`../llms`](../llms) Qwen3 engine, swapped in at decode time (the prefill stays exact) via a small, generic attention hook added to that engine — `ssa` never forks it. A teacher-forced perplexity harness scores real next-token predictions made under sampled attention, and `ssa.harness.ppl_sweep` compares **perplexity loss vs value-read fraction** across `dense` / `santa_sys` / `santa_hybrid` splits — the end-to-end analog of the variance result. The pipeline is CPU-validated (it reproduces the exact baseline through the real forward pass), and a per-step `unique_counts` hotspot was vectorized for a [~2× faster sampling path](docs/timing_unique_counts.md) (sampling steps ~65 → ~31 ms/token, identical perplexity).
+### 3. Real-model perplexity (Qwen3-4B, WikiText-103) — and an honest correction
 
-*Preliminary signal* (small Qwen3-4B / WikiText-103 calibration pass): `santa_sys` at S=256 read only **21.5% of value rows (~4.6× fewer) for +0.20% perplexity**. Directional only — 2 chunks of 256-token context, single seed, value-reads only (keys are still read in full to form the scores).
+The estimators run inside the sibling [`../llms`](../llms) Qwen3 engine, swapped in at decode time (prefill stays exact) through a small generic attention hook added to that engine (`ssa` never forks it). A teacher-forced perplexity harness scores real predictions under sampled attention; `ssa.harness.ppl_sweep` traces **perplexity vs value-read fraction**.
 
-*Planned sweep + hypothesis.* The real run sweeps several budgets and `(k_h, S_tail)` splits over longer context (4–8k) with multiple seeds. We expect: (i) the read fraction at fixed perplexity to **fall further as context grows** (a fixed budget reads a smaller slice of a larger cache); (ii) `santa_hybrid` to **overtake `santa_sys` at long context** (where the exact head is a tiny fraction), tracing the lowest perplexity-vs-reads frontier — the model-level echo of the variance plot; (iii) a **knee**: perplexity flat to ~1% down to some read fraction, then rising steeply, locating the usable budget. Launch with `python -m ssa.harness.ppl_sweep`.
+![Perplexity vs value-read fraction](docs/ppl_frontier_cheap2k.png)
 
-All **53 tests pass**, with no model download or GPU required. Run them with `uv run pytest`; `uv run python -m ssa.harness.variance` prints the sampler slopes and writes a stamped result file.
+- **Plain sampling is remarkably good:** `santa_sys` reaches dense-model perplexity reading only **~3.5% of value rows (~28× fewer)** at 4096 context; the read fraction *shrinks* as context grows (attention gets more concentrated).
+- **The hybrid ties plain sampling on bytes — it does not beat it.** At a matched *read* budget the two are within ~0–8% (a near-tie). The reason is subtle and important: with-replacement sampling **collides** onto the few high-mass tokens, so it reads them essentially for free (a real GPU cache serves the repeats from L2). That free "collision leverage" exactly cancels the head's variance advantage. So the hybrid's win is in *variance per sample*, not *bytes per quality* — it would only pay off on hardware that can't reuse a fetched value.
+- **`topk` is a biased red herring:** catastrophic at low `k` (+6000% perplexity at `k=1`), yet *below* dense for `k≥16` — a denoising artifact of truncating the noisy attention tail, not a fair comparison for the unbiased methods.
 
-**Not yet built:** the full multi-seed Qwen3-4B perplexity sweep at long context (a small calibration pass is done), block sampling, reuse/resident caching (Ideas 2–3), and the microbench phase.
+We confirmed the mechanism directly: a [concentration diagnostic](src/ssa/harness/concentration.py) measures attention's effective support at **~14 of ~1500 tokens**, and a closed-form collision formula predicts the measured read fractions to within rounding. A [crossover probe](src/ssa/harness/crossover.py) sweeping concentration finds **no regime where the hybrid decisively wins on bytes** — the two effects cancel everywhere.
+
+### 4. Contiguous-block sampling (`santa_block`)
+
+Unbiased for every block size (gate passes; `B=1`≡`santa`, `B≥n_k`≡`dense`). But **at a fixed byte budget, larger blocks have higher variance *and* read more** — dominated by row-level sampling, because blocks defeat the collision dedup above and waste reads on the cold rows inside each block.
+
+![Variance vs block size](docs/variance_vs_block.png)
+
+This is on *spatially unstructured* synthetic attention; block sampling's real premise is that attention mass clusters *contiguously* (a recent window, a relevant span), plus that contiguous reads are cheaper-per-byte on hardware — neither of which this byte-count harness captures. So blocks need a real model to be judged fairly (the deferred follow-up).
+
+---
+
+**Tests:** all **79 pass** with no model download or GPU required (`uv run pytest`). The real-model sweeps are reproducible on the GPU box via `python -m ssa.harness.ppl_sweep` / `concentration` / `crossover` / `plot_blocks`.
+
+**Not yet built:** reuse/resident caching (Ideas 2–3), cross-head sharing (Ideas 4–5), large sparse value memory (Idea 6), wiring `santa_block` into the real model (to test contiguous locality), and the kernel microbenchmark.
 
 ## Repository
 
