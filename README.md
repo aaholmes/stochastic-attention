@@ -66,13 +66,15 @@ Unbiased for every block size (gate passes; `B=1`≡`santa`, `B≥n_k`≡`dense`
 
 ![Variance vs block size](docs/variance_vs_block.png)
 
-This is on *spatially unstructured* synthetic attention; block sampling's real premise is that attention mass clusters *contiguously* (a recent window, a relevant span), plus that contiguous reads are cheaper-per-byte on hardware — neither of which this byte-count harness captures. So blocks need a real model to be judged fairly (the deferred follow-up).
+This is on *spatially unstructured* synthetic attention; block sampling's real premise is that attention mass clusters *contiguously*, plus that contiguous reads are cheaper-per-byte on hardware — neither of which this byte-count harness captures.
+
+**The proposed fix (Idea 7 — design doc §3.9): reorganize the KV cache so each contiguous block holds *similar* keys.** Then a block is uniformly hot or cold for any query, so a sampled hot block's rows are all useful. Because block sampling is unbiased for *any* grouping, clustering can never introduce bias — it's a pure efficiency substrate (unlike biased cluster-selection methods like Reformer/Routing-Transformer/Quest). And it unlocks a bigger prize: once keys are clustered, the block *center* `q·c_b` estimates a block's mass without reading its keys — so you could skip reading both K *and* V for cold blocks (with an importance-sampling correction, Idea 5). The make-or-break unknown is RoPE (it rotates keys by position, which may scramble content-clustering), so the next step is a cheap diagnostic on the real model — no kernel — before any clustering code.
 
 ---
 
 **Tests:** all **79 pass** with no model download or GPU required (`uv run pytest`). The real-model sweeps are reproducible on the GPU box via `python -m ssa.harness.ppl_sweep` / `concentration` / `crossover` / `plot_blocks`.
 
-**Not yet built:** reuse/resident caching (Ideas 2–3), cross-head sharing (Ideas 4–5), large sparse value memory (Idea 6), wiring `santa_block` into the real model (to test contiguous locality), and the kernel microbenchmark.
+**Not yet built / next:** the RoPE-vs-content clustering diagnostic that gates Idea 7 (content-clustered KV layout, the proposed fix for block sampling + a route to skipping key reads too); wiring `santa_block` into the real model; reuse/resident caching (Ideas 2–3), cross-head sharing (Ideas 4–5), large sparse value memory (Idea 6); and the kernel microbenchmark.
 
 ## Repository
 
