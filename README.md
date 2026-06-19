@@ -2,7 +2,7 @@
 
 A research-validation prototype exploring whether you can make LLM text generation cheaper by **randomly sampling** the attention cache instead of reading all of it — without distorting the model's output on average.
 
-> **Status.** Statistical core complete, plus the headline "hybrid" estimator (Idea 1) — all correctness gates pass. `PROTOTYPE_DESIGN.md` is the authoritative spec. Target hardware: a single 16 GB RTX 5060 Ti (Blackwell).
+> **Status.** Statistical core + the headline "hybrid" estimator (Idea 1) complete, now wired into a real Qwen3 model with a perplexity harness. All correctness gates pass. `PROTOTYPE_DESIGN.md` is the authoritative spec. Target hardware: a single 16 GB RTX 5060 Ti (Blackwell).
 
 ## The problem, briefly
 
@@ -33,9 +33,7 @@ This is about **correctness and statistics, not speed** (the real speedup lives 
 
 ## What's built so far
 
-The `ssa/` package implements and validates the foundation, on tiny random tensors, with no model in the loop.
-
-**The statistical core.**
+**The statistical core** (validated on tiny random tensors, no model in the loop).
 
 - **One swappable interface** `attn(q, K, V, impl=...)` with six implementations: `dense` (exact ground truth), `topk` (biased baseline), the three unbiased samplers `santa` (i.i.d.), `santa_strat` (stratified), `santa_sys` (systematic), and `santa_hybrid` (Idea 1, below).
 - **The sampling mechanics** — per-head CDF construction and inverse-CDF index draws (one shared offset per head for systematic), with with-replacement unique-key counting.
@@ -45,9 +43,11 @@ Its two gates pass: every `santa*` mean matches `dense` within Monte-Carlo error
 
 **The hybrid estimator (Idea 1 — the main contribution).** `santa_hybrid` computes the top-`k_h` highest-weight keys exactly and samples only the renormalized remainder. It is proven unbiased (the gate holds for every `k_h` and tail-sampler combination), and at a *matched read budget* it cuts variance sharply — e.g. on a concentrated distribution, **8× lower** variance than plain systematic sampling at `k_h=4`, growing to **32× lower** at `k_h=16`, exactly as predicted (the win grows with the head's mass share).
 
-All **39 tests pass**. Run them with `uv run pytest`; `uv run python -m ssa.harness.variance` prints the sampler slopes and writes a stamped result file.
+**Real-model integration (end-to-end perplexity).** The estimators now run inside the sibling [`../llms`](../llms) Qwen3 engine, swapped in at decode time (the prefill stays exact) via a small, generic attention hook added to that engine — `ssa` never forks it. A teacher-forced perplexity harness scores real next-token predictions made under sampled attention, and a sweep compares **perplexity loss vs value-read fraction** across `dense` / `santa_sys` / `santa_hybrid` splits — the end-to-end analog of the variance result. The whole pipeline is validated on a tiny CPU model (faithfully reproduces the exact baseline through the real forward pass); the actual Qwen3-4B run is one command away (`python -m ssa.harness.ppl_sweep`, deferred because it needs the GPU + weights).
 
-**Not yet built:** the variance-vs-`k_h` figure, block sampling, reuse/resident caching (Ideas 2–3), and the real-model accuracy/microbench phases.
+All **49 tests pass**, with no model download or GPU required. Run them with `uv run pytest`; `uv run python -m ssa.harness.variance` prints the sampler slopes and writes a stamped result file.
+
+**Not yet built:** the variance-vs-`k_h` figure, the executed Qwen3-4B perplexity sweep, block sampling, reuse/resident caching (Ideas 2–3), and the microbench phase.
 
 ## Repository
 
