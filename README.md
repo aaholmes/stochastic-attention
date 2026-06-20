@@ -92,6 +92,20 @@ This is on *spatially unstructured* synthetic attention; block sampling's real p
 
 **Cluster diagnostic (Idea 7, design doc §3.10).** A kernel-free Step-0 on real Qwen3-4B keys ([`ssa.harness.cluster_diag`](src/ssa/harness/cluster_diag.py)) settled the "skip the key reads too" idea: the *moment-based* free-energy estimate is **dead** (attention mass sits on a single token per cluster — `within_PR≈1` everywhere — so a 2-moment Gaussian can't estimate it), **but** a *magnitude*-based estimate (cluster by direction, store per-key magnitudes, rank by `Σ e^{|k_j|(q·ĉ_b)}`) recovers **near-oracle key-read selection at the concentrated deep layers** (~0.2–0.3% of keys vs the Gaussian's 6–35%). So skip-K is alive via the magnitude route; next is to test it end-to-end (does that selection preserve perplexity?).
 
+**The magnitude estimate — what it is, and how it becomes a bound.** Split each key into magnitude × direction, `k_j = |k_j|·k̂_j`, so the true term is `e^{q·k_j} = e^{|k_j|(q·k̂_j)}`. The estimate replaces each key's *own* direction with the cluster's center direction `ĉ_b` but keeps its *true* magnitude:
+
+```
+m̂_b = Σ_{j∈b} e^{|k_j|(q·ĉ_b)}    estimates    m_b = Σ_{j∈b} e^{|k_j|(q·k̂_j)}
+```
+
+So it's a per-term plug-in estimate of `e^{q·k_j}`, **exact iff the cluster has zero angular spread**. The error lives in the exponent, `s_j − ŝ_j = |k_j|·q·(k̂_j − ĉ_b)`, bounded by `|k_j|·‖q‖·ρ_b` (Cauchy–Schwarz), where `ρ_b = max_{j∈b}‖k̂_j − ĉ_b‖` is the cluster's **angular** radius. Adding/subtracting that term gives rigorous bounds:
+
+```
+Σ_j e^{|k_j|[(q·ĉ_b) − ‖q‖ρ_b]}  ≤  m_b  ≤  Σ_j e^{|k_j|[(q·ĉ_b) + ‖q‖ρ_b]}
+```
+
+`m̂_b` is the `ρ_b = 0` *center* of this band — what you **rank** by (great when direction-clustering makes `ρ_b` small). The **upper** bound is the unbiased safety net for skip-K: never skip a cluster whose upper bound could beat your current best (MIPS branch-and-bound ⇒ provably never miss the hottest token). It's strictly tighter than the earlier Euclidean-radius bound `|b|·e^{q·c_b + ‖q‖R_b}` because it uses the *exact* magnitudes and only bounds *direction*. Selection (rank by center) and guarantee (use upper bound) are the same expression at `ρ_b = 0` vs `+ρ_b`, both tightening as direction-clustering shrinks `ρ_b`.
+
 **Not yet built / next:** the end-to-end magnitude-ranked selection test; wiring `santa_block` into the real model; reuse/resident caching (Ideas 2–3), cross-head sharing (Ideas 4–5), large sparse value memory (Idea 6); and the kernel microbenchmark.
 
 ## Glossary — every named concept, one line
