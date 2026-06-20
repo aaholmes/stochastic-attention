@@ -63,7 +63,21 @@ CHEAP_CONDITIONS = [
     ("santa_hybrid", {"k_h": 16, "S": 16}),   # total 32
 ]
 
-CONDITION_PRESETS = {"full": DEFAULT_CONDITIONS, "cheap": CHEAP_CONDITIONS}
+# Skip-K set: magnitude-ranked cluster selection (read only selected clusters' K/V)
+# at several mass-coverage targets, vs dense and a couple of santa_sys reference points.
+SKIPK_CONDITIONS = [
+    ("dense", {}),
+    ("skip_k", {"coverage": 0.999, "B": 16}),
+    ("skip_k", {"coverage": 0.99, "B": 16}),
+    ("skip_k", {"coverage": 0.95, "B": 16}),
+    ("skip_k", {"coverage": 0.90, "B": 16}),
+    ("skip_k", {"coverage": 0.80, "B": 16}),
+    ("santa_sys", {"S": 64}),
+    ("santa_sys", {"S": 256}),
+]
+
+CONDITION_PRESETS = {"full": DEFAULT_CONDITIONS, "cheap": CHEAP_CONDITIONS,
+                     "skipk": SKIPK_CONDITIONS}
 
 
 def _total_budget(impl: str, cfg: dict) -> int | None:

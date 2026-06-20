@@ -45,3 +45,4 @@ from . import dense as _dense  # noqa: E402,F401
 from . import santa as _santa  # noqa: E402,F401
 from . import hybrid as _hybrid  # noqa: E402,F401
 from . import block as _block  # noqa: E402,F401
+from . import skip_k as _skip_k  # noqa: E402,F401

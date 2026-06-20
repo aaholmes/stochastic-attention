@@ -21,7 +21,7 @@ from engine.attention import Attention
 
 from ..attn import attn
 
-_SAMPLING_IMPLS = {"santa", "santa_strat", "santa_sys", "santa_hybrid"}
+_SAMPLING_IMPLS = {"santa", "santa_strat", "santa_sys", "santa_hybrid", "skip_k"}
 
 
 @dataclass
@@ -71,6 +71,8 @@ def make_decode_op(impl: str, *, base_seed: int, stats: ReadStats, cfg: dict):
         n_k = K.shape[0]
 
         call_cfg = dict(cfg)
+        if impl == "skip_k":
+            call_cfg["layer_idx"] = layer_idx          # for per-(layer,head) cluster seeding
         if is_sampling:
             gen = torch.Generator(device=qd.device).manual_seed(
                 _seed(base_seed, layer_idx, counter["step"])
