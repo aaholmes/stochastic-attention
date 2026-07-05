@@ -122,6 +122,9 @@ def main() -> None:
     p.add_argument("--chunk-len", type=int, default=288)
     p.add_argument("--prefill-len", type=int, default=32)
     p.add_argument("--device", default="cuda")
+    p.add_argument("--lora", default=None, help="trained debias-LoRA checkpoint to load before sweeping")
+    p.add_argument("--lora-rank", type=int, default=16)
+    p.add_argument("--lora-alpha", type=float, default=32.0)
     p.add_argument("--out", default="src/ssa/results/accept_sweep.json")
     args = p.parse_args()
 
@@ -133,6 +136,13 @@ def main() -> None:
     model = Qwen3Model.from_loaded(loaded).to(dtype=torch.bfloat16, device=args.device).eval()
     del loaded
     torch.cuda.empty_cache()
+
+    if args.lora:
+        from mla.heal import load_trainable, merge_lora, wrap_lora
+        wrap_lora(model, rank=args.lora_rank, alpha=args.lora_alpha)
+        load_trainable(model, args.lora)
+        merge_lora(model)  # fold in → plain model, same decode path
+        print(f"[accept] loaded + merged debias-LoRA {args.lora}", flush=True)
 
     chunks = _load_chunks(args.model, args.corpus, max_chunks=args.max_chunks,
                           chunk_len=args.chunk_len, device=args.device)
