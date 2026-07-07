@@ -81,6 +81,22 @@ def _student_step_logits(model, ids, cache, positions, *, S, base_seed, step):
     return logits
 
 
+def _student_step_probs(model, ids, cache, positions, *, S, base_seed, step, draws):
+    """Mean student softmax over `draws` independent stochastic draws per position
+    (grad on). Averaging inside the loss targets the *systematic* (expected) bias —
+    the Jensen gap — instead of the per-draw variance a single draw is floored by."""
+    acc = {t: None for t in positions}
+    for d in range(draws):
+        for t in sorted(positions, reverse=True):
+            gen_seed = (base_seed * 100_003 + step * 17 + d * 7919 + t) % (2**31 - 1)
+            install(model, "santa_sys", base_seed=gen_seed, S=S)
+            out = model(ids[:, t : t + 1], cache, start_pos=t)
+            p = out[0, -1, :].float().softmax(-1)
+            acc[t] = p if acc[t] is None else acc[t] + p
+    uninstall(model)
+    return {t: acc[t] / draws for t in positions}
+
+
 def _chunks(model_id, corpus, *, n, seq_len, skip):
     if corpus == "code":
         from mla.calibrate import load_code_chunks
@@ -116,6 +132,8 @@ def main() -> None:
     p.add_argument("--corpus", default="code", choices=["code", "wikitext"])
     p.add_argument("--S", type=int, default=32, help="sampled read budget to debias at")
     p.add_argument("--steps", type=int, default=300)
+    p.add_argument("--train-draws", type=int, default=1,
+                   help="stochastic draws averaged per position in the loss (>1 targets bias, not variance)")
     p.add_argument("--seq-len", type=int, default=288)
     p.add_argument("--prefill-len", type=int, default=32)
     p.add_argument("--pos-per-chunk", type=int, default=32, help="scored positions per prefill")
@@ -165,12 +183,21 @@ def main() -> None:
         avail = list(range(args.prefill_len, T - 1))
         k = min(args.pos_per_chunk, len(avail))
         positions = avail[-k:]  # a contiguous decreasing-scoreable tail
-        stu = _student_step_logits(model, ids, cache, positions, S=args.S, base_seed=1, step=step)
-        losses = []
-        for t in positions:
-            i = t - args.prefill_len
-            losses.append(_tvd_loss(teacher[i], stu[t]))
-        loss = torch.stack(losses).mean()
+        if args.train_draws > 1:
+            probs = _student_step_probs(model, ids, cache, positions, S=args.S,
+                                        base_seed=1, step=step, draws=args.train_draws)
+            losses = []
+            for t in positions:
+                p_t = teacher[t - args.prefill_len].float().softmax(-1)
+                losses.append(1.0 - torch.minimum(p_t, probs[t]).sum(-1))  # TVD(teacher, E[student])
+            loss = torch.stack(losses).mean()
+        else:
+            stu = _student_step_logits(model, ids, cache, positions, S=args.S, base_seed=1, step=step)
+            losses = []
+            for t in positions:
+                i = t - args.prefill_len
+                losses.append(_tvd_loss(teacher[i], stu[t]))
+            loss = torch.stack(losses).mean()
         (loss).backward()
         for g in optim.param_groups:
             g["lr"] = args.lr * cosine_warmup_multiplier(step, args.steps, args.warmup_frac)
