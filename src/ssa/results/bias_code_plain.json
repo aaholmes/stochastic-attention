@@ -1,0 +1,63 @@
+{
+  "git_sha": "f733f08aac1fa96eb65c0c9fe03a9638661069e2",
+  "torch_version": "2.12.1+cu130",
+  "cuda_version": "13.0",
+  "python_version": "3.13.5",
+  "platform": "Linux-6.8.0-134-generic-x86_64-with-glibc2.39",
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 5060 Ti",
+    "capability": [
+      12,
+      0
+    ],
+    "driver": "13.0"
+  },
+  "model": "Qwen/Qwen3-4B",
+  "corpus": "code",
+  "draws": 32,
+  "lora": null,
+  "chunk_len": 288,
+  "prefill_len": 32,
+  "results": [
+    {
+      "S": 8,
+      "read_fraction": 1.0,
+      "draws": 32,
+      "bias": 0.06210494742673986,
+      "per_draw_tvd": 0.08374345162335564,
+      "variance": 0.021638504196615782,
+      "bias_frac_of_per_draw": 0.7416095972024527,
+      "n_steps": 2040
+    },
+    {
+      "S": 16,
+      "read_fraction": 1.0,
+      "draws": 32,
+      "bias": 0.02583180969836665,
+      "per_draw_tvd": 0.04473284412832821,
+      "variance": 0.01890103442996156,
+      "bias_frac_of_per_draw": 0.5774685290356488,
+      "n_steps": 2040
+    },
+    {
+      "S": 32,
+      "read_fraction": 1.0,
+      "draws": 32,
+      "bias": 0.010982249297347724,
+      "per_draw_tvd": 0.025997004789464612,
+      "variance": 0.015014755492116888,
+      "bias_frac_of_per_draw": 0.4224428693338674,
+      "n_steps": 2040
+    },
+    {
+      "S": 64,
+      "read_fraction": 1.0,
+      "draws": 32,
+      "bias": 0.005599364579892626,
+      "per_draw_tvd": 0.015601409650316426,
+      "variance": 0.0100020450704238,
+      "bias_frac_of_per_draw": 0.35890119581463975,
+      "n_steps": 2040
+    }
+  ]
+}

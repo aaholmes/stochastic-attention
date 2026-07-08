@@ -1,0 +1,33 @@
+{
+  "git_sha": "f733f08aac1fa96eb65c0c9fe03a9638661069e2",
+  "torch_version": "2.12.1+cu130",
+  "cuda_version": "13.0",
+  "python_version": "3.13.5",
+  "platform": "Linux-6.8.0-134-generic-x86_64-with-glibc2.39",
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 5060 Ti",
+    "capability": [
+      12,
+      0
+    ],
+    "driver": "13.0"
+  },
+  "model": "Qwen/Qwen3-4B",
+  "corpus": "wikitext",
+  "draws": 32,
+  "lora": "src/ssa/results/debias_lora_wiki_s32.pt",
+  "chunk_len": 288,
+  "prefill_len": 32,
+  "results": [
+    {
+      "S": 32,
+      "read_fraction": 1.0,
+      "draws": 32,
+      "bias": 0.03258459801767387,
+      "per_draw_tvd": 0.07705245672487746,
+      "variance": 0.044467858707203586,
+      "bias_frac_of_per_draw": 0.4228885022319279,
+      "n_steps": 2040
+    }
+  ]
+}

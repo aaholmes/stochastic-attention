@@ -74,8 +74,8 @@ def run(model, chunks, *, s_values, draws: int, prefill_len: int, base_seed: int
             perdraw = torch.zeros(d.shape[0], device=d.device)
             for m in range(draws):
                 stats = install(model, "santa_sys", base_seed=base_seed + 1000 * m + S, S=S)
-                read_fraction = stats.read_fraction
                 p_m = _decode_logits(model, ids, prefill_len=prefill_len).float().softmax(-1)
+                read_fraction = stats.read_fraction  # read AFTER decode populates the counter
                 uninstall(model)
                 p_bar += p_m
                 perdraw += _tvd(p_m, d)
