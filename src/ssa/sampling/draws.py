@@ -1,11 +1,11 @@
-"""Index draws for the three sampling estimators (design doc §2).
+"""Index draws for the three sampling estimators.
 
 All operate per head on attention weights ``A`` of shape ``[H, n_k]`` and return
 sampled key indices of shape ``[H, S]``. Sampling is **with replacement**; use
 ``unique_counts`` to recover the per-head unique-key count (paper App. M).
 
   - ``iid``: S indices ~ Categorical(A).
-  - ``stratified``: S equal-mass CDF strata, one independent offset per stratum.
+  - ``stratified``: S equal-mass strata of the cumulative distribution, one independent offset per stratum.
   - ``systematic``: a single shared offset U ~ Unif[0, 1/S) per head, thresholds
     ``U + m/S`` — exactly one RNG draw per head.
 """

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Sequel to run_bias_isolate.sh: if there's a real systematic bias, does training the
-# debiaser on the M-DRAW-averaged loss (targets bias, not variance) reduce it further
-# than the single-draw LoRA? Retrain at S=16,32 on code, then bias-isolate the result.
-# Waits on the bias chain's completion marker (output file) so the GPU is free.
+# Follow-up to run_bias_isolate.sh: does training the debiasing adapter on the loss
+# averaged over M draws (which targets bias rather than variance) reduce the bias more
+# than the single-draw adapter? Retrains at S=16,32 on code, then measures bias.
+# Waits for the completion line in run_bias_isolate.log so the GPU is free; start the
+# first chain as `./run_bias_isolate.sh > run_bias_isolate.log 2>&1`.
 set -uo pipefail
 cd "$(dirname "$0")"
 export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"

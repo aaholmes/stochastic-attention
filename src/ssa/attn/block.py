@@ -1,6 +1,6 @@
-"""Contiguous-block sampling — `santa_block` (design doc §0.5, the GPU-read axis).
+"""Contiguous-block sampling — `santa_block`, matched to how GPUs read memory.
 
-A paged KV cache reads coalesced contiguous blocks, not scattered rows. So instead
+A paged key-value (KV) cache reads coalesced contiguous blocks, not scattered rows. So instead
 of sampling individual value rows, partition the keys into contiguous blocks of size
 ``B``, sample blocks ∝ their summed attention mass, and use each sampled block's
 **exact within-block weighted average** of values:

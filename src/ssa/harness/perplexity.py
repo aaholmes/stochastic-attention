@@ -1,10 +1,10 @@
-"""Teacher-forced decode perplexity (Phase C accuracy harness).
+"""Teacher-forced decode perplexity (the real-model accuracy harness).
 
 The engine's ``evaluate_ppl`` runs a single prefill forward and never touches the
 decode path, so it cannot exercise the sampled attention op. This harness instead
 prefills a prefix densely, then feeds the *true* tokens one at a time through the
 decode path (which is sparse when an ssa op is installed), scoring only those
-decode-step predictions. PPL therefore reflects the sampled attention.
+decode-step predictions. Perplexity (PPL) therefore reflects the sampled attention.
 
 Whatever attention is installed on the model is what gets measured — install via
 ``ssa.models.patch.install`` and read the avoided-bytes metric off the returned

@@ -1,6 +1,6 @@
-"""Sampling mechanics shared by the santa estimators (design doc §2).
+"""Sampling mechanics shared by the santa estimators.
 
-CDF construction + inverse-CDF index draws (iid / stratified / systematic).
+Cumulative distribution function (CDF) construction + inverse-CDF index draws (iid / stratified / systematic).
 """
 
 from __future__ import annotations

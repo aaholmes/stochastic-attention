@@ -1,4 +1,4 @@
-"""Idea 1 — ``santa_hybrid``: deterministic head + sampled tail (design doc §3).
+"""Hybrid estimator ``santa_hybrid``: deterministic head + sampled tail.
 
 Keep the top-``k_h`` keys per head **exactly** (zero variance), then form an
 unbiased Monte-Carlo estimate of the renormalized residual ("tail"):
@@ -7,7 +7,7 @@ unbiased Monte-Carlo estimate of the renormalized residual ("tail"):
     out      = head_out + (1 − m_head) · tail_avg   # tail_avg ~ residual dist.
 
 E[out] = AV for any distribution. Variance comes only from the tail, so it shrinks
-as the head absorbs more mass — the win grows with ``m_head`` (design §3, wiki §05).
+as the head absorbs more mass — the gain grows with ``m_head``.
 
 The tail sample budget may be given as ``S_tail`` (direct) or ``S`` (the generic
 name used by ``ssa.harness.variance.collect_estimates``); ``S_tail`` wins if both.

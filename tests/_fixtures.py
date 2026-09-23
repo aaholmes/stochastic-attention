@@ -1,8 +1,8 @@
 """Tiny synthetic decode-geometry tensors, shared across ssa tests.
 
-Decode geometry (design doc §2): single query ``q=[H, d]``, ``K,V=[n_k, H_kv, d]``
+Decode geometry: single query ``q=[H, d]``, ``K,V=[n_k, H_kv, d]``
 with GQA grouping ``G = H / H_kv``. Leading-underscore module name so pytest does
-not try to collect it as a test file (matches ``../llms/tests/_tiny.py``).
+not try to collect it as a test file (matches ``tests/_tiny.py`` in github.com/aaholmes/llms).
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ def make_qkv(
     """Random Gaussian ``q=[H,d]``, ``K,V=[n_k,H_kv,d]`` for one decode step.
 
     float64 by default: the variance/unbiasedness core measures in double
-    precision so bf16 roundoff is never mistaken for estimator bias (plan §Numerics).
+    precision so bf16 roundoff is never mistaken for estimator bias.
     """
     gen = torch.Generator(device="cpu").manual_seed(seed)
     q = torch.randn(g.H, g.d, generator=gen, dtype=torch.float64)

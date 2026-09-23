@@ -1,7 +1,8 @@
 """Tiny synthetic Qwen3 model for CPU integration tests (no weights download).
 
-Replicates the random-``LoadedModel`` recipe from ``../llms/tests/_tiny.py`` so we
-can exercise the engine's real forward pass + decode seam on CPU in float32.
+Replicates the random-``LoadedModel`` recipe from ``tests/_tiny.py`` in
+github.com/aaholmes/llms so we can exercise the engine's real forward pass +
+decode-attention hook on CPU in float32.
 """
 
 from __future__ import annotations

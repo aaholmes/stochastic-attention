@@ -1,13 +1,14 @@
-"""Plot the bias / variance split of stochastic-attention decode vs read budget S.
+"""Plot the bias / variance split of sampled-attention decode vs sample budget S.
 
-Two findings in one figure: (1) the systematic Jensen-gap bias (dark) dominates the
-per-draw variance (light) at the low read budgets that matter, scaling ~1/S; (2) the
-TVD-trained LoRA — single-draw OR multi-draw-averaged — barely dents the bias, so the
-correctable-in-principle bias is not in a rank-16 adapter's reach.
-
+The error of the sampled model's next-token distribution, measured as total
+variation distance (TVD) to the dense model, splits into a systematic part that
+survives averaging over draws (the Jensen-gap bias) and a per-draw variance part.
 Per S: grouped stacked bars [plain | single-draw LoRA | multi-draw LoRA], each split
-bias (dark) + variance (light). Read-fractions come from accept_sweep_code.json (the
-`read_fraction` field in the bias json is a known display bug — sampling still happened).
+bias (dark) + variance (light). LoRA is a low-rank adapter trained by
+``ssa.harness.debias_train`` to reduce that TVD.
+
+The ``read_fraction`` field in the bias JSONs is a known recording bug (it reads 1.0
+although sampling did happen), so the x-axis is labelled by S alone.
 """
 import json
 from pathlib import Path
@@ -23,14 +24,6 @@ def _rows(path):
     return {r["S"]: r for r in json.loads((R / path).read_text())["results"]}
 
 
-def _reads_map():
-    try:
-        rs = json.loads((R / "accept_sweep_code.json").read_text())["results"]
-        return {r["S"]: r["read_fraction"] for r in rs}
-    except Exception:
-        return {}
-
-
 def main():
     plain = _rows("bias_code_plain.json")
     single = {}
@@ -38,12 +31,11 @@ def main():
     for f in sorted(R.glob("bias_code_debiased_s*.json")):
         S = json.loads(f.read_text())["results"][0]["S"]
         (md if f.stem.endswith("_md") else single)[S] = json.loads(f.read_text())["results"][0]
-    reads = _reads_map()
 
     S = sorted(plain)
     x = range(len(S))
     w = 0.26
-    fig, ax = plt.subplots(figsize=(10, 5.2))
+    fig, ax = plt.subplots(figsize=(8, 5))
 
     def stacked(series, offset, cbias, cvar, label):
         xs, bs, vs = [], [], []
@@ -57,20 +49,16 @@ def main():
     stacked(single, 0.0, "tab:blue", "lightsteelblue", "single-draw LoRA")
     stacked(md, +w, "tab:green", "honeydew", "multi-draw LoRA")
 
-    # bias-fraction callout on the plain bar
-    for i, s in enumerate(S):
-        frac = plain[s]["bias"] / plain[s]["per_draw_tvd"]
-        ax.annotate(f"{100*frac:.0f}%\nbias", (i - w, plain[s]["bias"] + plain[s]["variance"]),
-                    ha="center", va="bottom", fontsize=8, color="tab:red")
-
     ax.set_xticks(list(x))
-    ax.set_xticklabels([f"S={s}\n({100*reads.get(s, float('nan')):.1f}% reads)" for s in S])
-    ax.set_ylabel("TVD to dense model (per token)", fontsize=11)
-    ax.set_title("Stochastic-attention error: systematic bias vs per-draw variance (code, Qwen3-4B)\n"
-                 "bias dominates at low read budgets and scales ~1/S; the TVD-LoRA barely removes it",
-                 fontsize=11)
-    ax.legend(fontsize=8, ncol=3, loc="upper right")
-    ax.grid(True, axis="y", alpha=0.3)
+    ax.set_xticklabels([str(s) for s in S])
+    ax.set_xlabel("samples per head per step, S")
+    ax.set_ylabel("TVD to dense model (mean per token)")
+    meta = json.loads((R / "bias_code_plain.json").read_text())
+    ax.text(0.99, 0.97, f"{meta['model']}, {meta['corpus']} corpus, "
+            f"n = {plain[S[0]]['n_steps']} decode steps × {meta['draws']} draws",
+            transform=ax.transAxes, fontsize=8, color="0.3", va="top", ha="right")
+    ax.legend(fontsize=8, ncol=3, loc="upper center", bbox_to_anchor=(0.5, -0.14), frameon=False)
+    ax.grid(True, axis="y", alpha=0.2)
     fig.tight_layout()
     out = R / "bias_split_plot.png"
     fig.savefig(out, dpi=150)

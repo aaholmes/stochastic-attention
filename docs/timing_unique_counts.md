@@ -9,7 +9,7 @@ path that is ~32 tiny GPU ops **with host syncs, per layer, per token** (36 laye
 The fix sorts each `[H, S]` row once and counts value changes
 (`distinct = 1 + #jumps`) — fully vectorized, no per-head loop, no host sync.
 
-## Calibration (identical config, same machine)
+## Calibration (identical config, one machine)
 
 `Qwen/Qwen3-4B`, WikiText-103 test, `--max-chunks 2 --chunk-len 256 --prefill 64
 --n-runs 1`, RTX 5060 Ti (BF16). The two runs differ only in the `unique_counts`
@@ -32,8 +32,8 @@ implementation.
 - **Dense is unaffected** (it never calls `unique_counts`), confirming the win is
   isolated to the sampling path.
 - Sampling steps went **~65 → ~31 ms/tok (~2.1×)**. The sparse-specific overhead
-  over dense fell from **~38 → ~5 ms/tok**, i.e. `unique_counts` was ~**85–90%** of
+  over dense fell from **~38 → ~5 ms/tok**, so `unique_counts` was ~**85–90%** of
   the per-step sampling cost.
 - Extrapolated to the default full sweep (16×512 tokens, 6 conditions, 3 seeds),
   this roughly **halves** wall time (order ~100 min → ~50 min); the remaining cost
-  is the genuine sequential decode + sampling, which is memory-bound on this card.
+  is the sequential decode + sampling, which is memory-bound on this card.

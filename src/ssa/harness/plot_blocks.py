@@ -1,4 +1,4 @@
-"""Variance vs contiguous-block size B at a fixed read budget (design doc §0.5).
+"""Variance vs contiguous-block size B at a fixed read budget.
 
 At a fixed nominal read budget R, sampling larger blocks means fewer block draws
 (S = R/B) but each block contributes its *exact* within-block mean. This traces the
@@ -6,14 +6,14 @@ trade-off: how does estimator variance move as you coarsen from row-level (B=1, 
 sampling) toward whole-cache (B→n_k, exact/dense)? The achieved read fraction is
 reported alongside, since block collisions make it < nominal.
 
-**Content-clustered layout (the actual `santa_block` premise).** Contiguous-block
-sampling only pays off if a block's rows are *all* useful — i.e. attention mass
+**Content-clustered layout.** Contiguous-block
+sampling only pays off if a block's rows are *all* useful, that is, when attention mass
 clusters contiguously. On the native (arrival-order) key layout it does not, so
 larger blocks read cold neighbours and lose to row-level sampling. This harness
-therefore also measures a **clustered layout**: cluster each kv-head's keys by
+therefore also measures a **clustered layout**: cluster each KV head's keys by
 direction and permute the cache so similar keys sit adjacent, then sample blocks
 over that reordering. A permutation of the key axis cannot bias `santa_block` (it is
-unbiased for *any* partition, design doc §0.5), so this is a pure efficiency test —
+unbiased for *any* partition), so this is a pure efficiency test —
 does clustering make a hot block uniformly hot, and does that beat native-order
 block sampling on variance at a fixed read budget?
 """
@@ -34,13 +34,13 @@ B_VALUES = [1, 2, 4, 8, 16, 32, 64, 128]
 
 
 def cluster_permutation(K: torch.Tensor, n_clusters: int, *, seed: int = 0) -> torch.Tensor:
-    """Per-kv-head permutation ordering keys so same-cluster keys are contiguous.
+    """Per-KV head permutation ordering keys so same-cluster keys are contiguous.
 
-    ``K``: ``[n_k, H_kv, d]``. Clusters each kv-head's *directions* (unit-normalised
+    ``K``: ``[n_k, H_kv, d]``. Clusters each KV head's *directions* (unit-normalised
     keys — content, not magnitude) with Lloyd k-means, then orders positions by
     cluster label. Returns ``perm`` ``[H_kv, n_k]`` where ``perm[h]`` reorders that
-    head's key axis. Each kv-head is a physically separate cache region, so heads may
-    carry independent orderings; the ``G`` query heads sharing a kv-head inherit it.
+    head's key axis. Each KV head is a physically separate cache region, so heads may
+    carry independent orderings; the ``G`` query heads sharing a KV head inherit it.
     """
     n_k, H_kv, _ = K.shape
     k = max(1, min(n_clusters, n_k))
@@ -54,7 +54,7 @@ def cluster_permutation(K: torch.Tensor, n_clusters: int, *, seed: int = 0) -> t
 
 
 def apply_permutation(T: torch.Tensor, perm: torch.Tensor) -> torch.Tensor:
-    """Apply a per-kv-head permutation ``[H_kv, n_k]`` to a ``[n_k, H_kv, d]`` cache."""
+    """Apply a per-KV head permutation ``[H_kv, n_k]`` to a ``[n_k, H_kv, d]`` cache."""
     out = torch.empty_like(T)
     for h in range(perm.shape[0]):
         out[:, h, :] = T[perm[h], h, :]
@@ -89,7 +89,7 @@ def build_layout_curves(q, K, V, *, read_budget, n_clusters, B_values=B_VALUES,
                         method="sys", runs=600, base_seed=0, seed=0):
     """Native-order vs content-clustered block curves on the same (q, K, V).
 
-    Clustering permutes each kv-head's key axis so similar keys are contiguous, then
+    Clustering permutes each KV head's key axis so similar keys are contiguous, then
     reuses the identical block sweep. Returns ``(native_rows, cluster_rows)``.
     """
     native = build_block_curve(q, K, V, read_budget=read_budget, B_values=B_values,
@@ -107,7 +107,7 @@ def _annotate_reads(ax, rows, color):
                     color=color, xytext=(3, 4), textcoords="offset points")
 
 
-def plot_block_curve(rows, out_path, *, title: str, cluster_rows=None) -> None:
+def plot_block_curve(rows, out_path, *, title: str | None = None, cluster_rows=None) -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -123,11 +123,13 @@ def plot_block_curve(rows, out_path, *, title: str, cluster_rows=None) -> None:
         ax.loglog([r["B"] for r in cluster_rows], cvar, "-s", color="tab:red",
                   label="content-clustered")
         _annotate_reads(ax, cluster_rows, "tab:red")
-    ax.set_xlabel("block size B  (B=1: row-level santa  →  B≥n_k: exact/dense)")
-    ax.set_ylabel("variance-trace at fixed read budget")
-    ax.set_title(title)
-    ax.grid(True, which="both", ls=":", alpha=0.5)
-    ax.legend(fontsize=8)
+    ax.set_xlabel("block size B (rows)")
+    ax.set_ylabel("variance trace at fixed read budget")
+    if title:
+        ax.set_title(title)
+    ax.grid(True, which="major", ls=":", alpha=0.3)
+    if cluster_rows is not None:
+        ax.legend(fontsize=8, frameon=False)
     fig.tight_layout()
     fig.savefig(out_path, dpi=130)
     plt.close(fig)
@@ -179,9 +181,7 @@ def main() -> None:
                      "rows": rows, "cluster_rows": cluster_rows})
     sha = payload.get("git_sha", "nogit")[:8]
     png = out_dir / f"variance_vs_block_{sha}.png"
-    plot_block_curve(rows, png, cluster_rows=cluster_rows,
-                     title=f"Variance vs block size (budget={args.read_budget}, "
-                           f"n_k={args.n_k}, q_scale={args.scale})")
+    plot_block_curve(rows, png, cluster_rows=cluster_rows)
     (out_dir / f"variance_vs_block_{sha}.json").write_text(json.dumps(payload, indent=2))
 
     hdr = f"{'B':>5} {'S':>5} {'read%':>7} {'variance':>12}"

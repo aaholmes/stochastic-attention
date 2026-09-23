@@ -1,14 +1,14 @@
 """Where does the hybrid's crack open? Read-matched variance vs concentration.
 
-Phase C showed plain ``santa_sys`` beats ``santa_hybrid`` on the *bytes* frontier
+The real-model perplexity sweep showed plain ``santa_sys`` beats ``santa_hybrid`` on the *bytes* frontier
 because, when attention is concentrated, sys's with-replacement collisions buy many
 samples per unique read — leverage the deterministic head can't match. The open
-question (design §3.7): is there a *diffuse* regime where collisions vanish and the
+question: is there a *diffuse* regime where collisions vanish and the
 head's guarantee wins?
 
 This answers it on synthetic tensors (no model): sweep attention concentration via a
 temperature knob, and for each level compare the read-matched frontiers — variance
-vs **expected unique-read fraction** — of sys against hybrid(k_h=1). Crossover =
+vs **expected unique-read fraction** — of sys and hybrid(k_h=1). Crossover =
 the concentration where hybrid's frontier drops below sys's.
 """
 
@@ -107,16 +107,13 @@ def plot_crossover(rows: list[dict], out_path) -> None:
         hy = [v for _, v in row["hybrid_kh1"]]
         ax.loglog(sx, sy, "-o", color="tab:green", label="sys", markersize=4)
         ax.loglog(hx, hy, "-s", color="tab:purple", label="hybrid k_h=1", markersize=4)
-        adv = _hybrid_advantage(row)
-        win = "hybrid wins" if adv < 1 else "sys wins"
-        ax.set_title(f"PR≈{row['participation_ratio']:.0f}  ({win}, {adv:.2f}×)", fontsize=9)
-        ax.set_xlabel("read %", fontsize=8)
+        ax.set_title(f"participation ratio ≈ {row['participation_ratio']:.0f}", fontsize=9)
+        ax.set_xlabel("rows read (%)", fontsize=8)
         ax.set_ylabel("variance", fontsize=8)
-        ax.grid(True, which="both", ls=":", alpha=0.4)
-        ax.legend(fontsize=7)
+        ax.grid(True, which="major", ls=":", alpha=0.3)
+        ax.legend(fontsize=7, frameon=False)
     for j in range(n, nrow * ncol):
         axes[j // ncol][j % ncol].axis("off")
-    fig.suptitle("Read-matched variance: sys vs hybrid across attention concentration", fontsize=11)
     fig.tight_layout()
     fig.savefig(out_path, dpi=120)
     plt.close(fig)

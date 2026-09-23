@@ -1,11 +1,12 @@
-"""Decode-time attention geometry + weight computation (design doc §2).
+"""Decode-time attention geometry + weight computation.
 
-Single query per head ``q=[H, d]`` against a GQA KV cache ``K,V=[n_k, H_kv, d]``
+Single query per head ``q=[H, d]`` attending to a grouped-query-attention (GQA)
+key-value (KV) cache ``K,V=[n_k, H_kv, d]``
 with group size ``G = H // H_kv``. At decode the single query is causally allowed
 to see every cached position, so there is no mask to apply.
 
 Softmax is accumulated in at least float32 (matching the engine's RMSNorm/softmax
-idiom in ``../llms/src/engine/attention.py``) so low-precision inputs don't bias
+idiom in ``src/engine/attention.py`` of github.com/aaholmes/llms) so low-precision inputs don't bias
 the weights.
 """
 

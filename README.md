@@ -1,161 +1,135 @@
 # Semi-Stochastic Sparse Attention
 
-A research-validation prototype exploring whether you can make LLM text generation cheaper by **randomly sampling** the attention cache instead of reading all of it — without distorting the model's output on average.
+When a large language model (LLM) generates text, each new token attends to every earlier token. To do that, the GPU re-reads a stored key and value vector for every past position (the KV cache) from its main memory (HBM, high-bandwidth memory). At decode time that memory traffic, not arithmetic, limits speed. This repository tests whether attention can instead be **estimated by randomly sampling a small part of the cache**, in a way that is unbiased: the expected output equals exact attention.
 
-> **One-line status.** Statistical core + hybrid estimator + contiguous-block sampling built, unbiased, and gated; all running end-to-end in a real Qwen3-4B via a perplexity harness; **85 tests pass** (no GPU/model needed). Authoritative spec: `PROTOTYPE_DESIGN.md`. Hardware: one 16 GB RTX 5060 Ti (Blackwell).
+I built this as a research prototype. It reproduces the sampled-attention estimator from *Stochastic Sparse Attention for Memory-Bound Inference* ([arXiv:2605.01910](https://arxiv.org/abs/2605.01910), whose authors call the method SANTA) in plain PyTorch, then tests several extensions of it inside a real model, Qwen3-4B. All 98 tests run on CPU without downloading a model (`uv run pytest`).
 
-## Executive summary
+## Summary of results
 
-**Motivation.** At decode time an LLM is bottlenecked by **memory bandwidth, not compute** — each new token re-reads the entire KV cache (plus the weights) from HBM. But attention is a softmax-weighted *average* of cached value vectors — an expectation over a probability distribution — so it can be **estimated by sampling a few values instead of reading all of them, without bias**. We reproduce the SANTA paper's estimator in plain PyTorch and push our own extensions, asking one disciplined question throughout: *how few cache reads can we get away with at no cost to the model's output (in expectation)?*
+- **Plain sampling works well.** Systematic sampling (`santa_sys`) matches dense perplexity to within +0.19% (s.d. 0.06% over 3 seeds) while reading 3.5% of cached values, about 28× fewer. That was measured on Qwen3-4B, WikiText-103, at 4096-token context over 8 chunks.
+- **Computing the heaviest tokens exactly does not save reads.** The hybrid estimator, which computes the top-weighted tokens exactly and samples the rest, has much lower variance per sample. It ties plain sampling once you count *distinct* values read, because repeated draws of the few hot tokens cost plain sampling nothing extra.
+- **Reading contiguous blocks costs more.** Block sampling stays unbiased, but at a fixed read budget its variance grows with block size on unstructured attention.
+- **Skipping key reads by cluster selection fails in the version tested.** Deterministically keeping the top key clusters needs about 60% of keys to preserve perplexity, because attention's long tail of small weights carries too much total mass to drop.
+- **Sampling bias exists, and a small adapter does not remove it.** Averaged over draws, sampled attention still shifts the next-token distribution. This systematic bias is 74% of the per-draw error at 8 samples. A rank-16 low-rank adapter (LoRA) trained to reduce it removes at most 8%.
 
-**Ideas.** (1) **Hybrid** — compute the few highest-weight tokens exactly, sample the diffuse tail (lower variance per sample). (2–3) **Reuse / resident** — recycle or skip reads across decode steps. (4–5) **Cross-head sharing** — one shared sample set / proposal across heads. (6) **Large value memory** — spend the now-cheap V-reads on more value capacity. (7) **Clustered-KV / skip-K** — reorganize the cache by key *content* so cheap per-cluster summaries decide *which* clusters to fetch, attacking the **key** reads that sampling alone can't avoid. All are unbiased by construction (Monte-Carlo / importance sampling), so they change the model's *memory traffic*, never its output.
+## Background
 
-**Status & honest results.** The statistical core (six estimators + variance harness) and the hybrid are built, proven unbiased, and reproduce the paper's `1/S` variance slopes; everything runs inside a real Qwen3-4B through a clean attention-op hook in the sibling `../llms` engine, scored by a teacher-forced perplexity harness. What we've actually found:
-- **Plain sampling is remarkably good** — dense-model perplexity at **~3.5% of value reads (~28× fewer)** at 4096 context, the read fraction *shrinking* as context grows (attention concentrates).
-- **The exact-head hybrid *ties* plain sampling on bytes** — it wins per-*sample*, but with-replacement collisions let plain sampling read the hot tokens essentially for free (an L2-cache effect) and cancel the head's edge. Measured, mechanism-confirmed, conclusive: the hybrid's value is variance-per-sample, not bytes-per-quality.
-- **Contiguous-block sampling** is unbiased but loses on byte-count for *scattered* attention; its premise needs content-clustered keys.
-- **Skip-K / clustering (negative for the variant tested)** — estimating a cluster's mass from its *moments* is dead (mass sits on one token per cluster); a *magnitude* estimate ranks the hot clusters well, but the end-to-end test killed the *biased deterministic* version: it needs ~60% of keys to preserve quality and collapses below that, because attention's **heavy tail** can't be dropped. Plain sampling (which *samples* the tail) wins by ~10×. (Untested: a budget-ranked version and the unbiased IS-tail version — open but unpromising.)
+Attention at one decode step is a weighted average of the cached value vectors. The weights `A` come from a softmax, so they are non-negative and sum to 1, which makes attention an expectation over a probability distribution. An expectation can be estimated by Monte Carlo: draw `S` value rows with probability `A` and average them. The estimate is unbiased, and its variance falls as roughly `1/S`, or faster with structured sampling. The cost that matters is how many distinct value rows are fetched from memory.
 
-**Result — we tested the skip-K hypothesis end-to-end, and the version we built failed (cleanly).** We wired *biased, deterministic* magnitude-ranked cluster selection (`skip_k`) into the model and measured perplexity vs key-read fraction. Plain sampling won by ~10×: `santa_sys` reaches dense at ~9% reads, while deterministic cluster selection needs ~60% reads to match and *collapses* (+92% perplexity) by 17%. The reason is structural and worth knowing: the magnitude estimate *ranks* the hot clusters fine, but attention's **heavy tail** (thousands of tiny weights) carries enough *aggregate* mass that *dropping* the un-selected clusters wrecks the output. That is exactly *why* unbiased sampling wins: it captures the tail's contribution by sampling it cheaply rather than reading or discarding it. **Scope of the claim:** this decisively kills the *biased deterministic* variant; two cheaper-to-medium variants remain untested — a *budget-ranked* version (removes the coverage-vs-calibration confound) and the *unbiased* exact-head + IS-sampled-tail version (the actual key-read claim). So skip-K is **closed-negative for what we tested, open-but-unpromising beyond it**; the validated champion stands: **plain unbiased systematic sampling, dense quality at ~3.5–9% reads.** The banked value of the clustering arc is the *negative knowledge* (why deterministic dropping fails) and the reusable diagnostics/derivations.
+## Estimators
 
-## The problem, briefly
+`attn(q, K, V, impl=...)` exposes one interface with these implementations:
 
-When an LLM generates text one token at a time, each new token must "attend" to every previous token: the GPU re-reads the entire **KV cache** (a stored key and value vector for every past position, every attention head) from main memory. On a 16 GB consumer GPU this memory traffic — not raw compute — is what caps context length and keeps generation slow.
+| `impl` | what it does | unbiased |
+|---|---|---|
+| `dense` | exact attention (reference) | — |
+| `topk` | keeps the `k` highest-weight tokens, renormalizes | no |
+| `santa` | `S` independent draws from `A` | yes |
+| `santa_strat` | stratified: one draw from each of `S` equal-mass strata | yes |
+| `santa_sys` | systematic: one random offset, `S` evenly spaced draws | yes |
+| `santa_hybrid` | top-`k_h` tokens exact, remaining mass sampled | yes |
+| `santa_block` | samples contiguous blocks of `B` rows | yes |
+| `skip_k` | reads only the key clusters ranked highest by a cheap estimate | no |
 
-**Attention is a weighted average of the cached value vectors**, where the weights `A` are a softmax (they sum to 1, so `A` is a probability distribution). The expensive part is touching all of those values every step.
+The measurement harness accumulates in float64, so low-precision roundoff is never mistaken for bias. Every result file in `src/ssa/results/` records the git commit, GPU, and library versions that produced it.
 
-## The idea
+## Results
 
-If attention is an average over a probability distribution, you can **estimate** it by sampling: draw a handful of value rows according to their attention weights and average them. This is a standard Monte-Carlo estimator, and it is **unbiased** — its expected value equals the true dense attention output — with error that shrinks as roughly `1/S` for `S` samples. We reproduce this published result (the "SANTA" paper) in plain PyTorch, then test several of our own extensions (the headline three are below; the full set — cross-head sharing, large value memory, clustered-KV / skip-K — is in `PROTOTYPE_DESIGN.md`):
+### Unbiasedness and variance on synthetic attention
 
-1. **Hybrid (deterministic head + sampled tail) — main contribution.** Compute the few highest-weight tokens *exactly* (zero error) and only sample the diffuse remainder. At the same read budget this should cut the estimator's variance — and the win grows the more attention mass sits in those top tokens.
-2. **Reuse across steps.** Recycle values sampled on the previous decode step, reweighted by an importance ratio, to avoid re-reading memory — *if* you can prove the reweighting keeps the estimator unbiased and *if* those values are still cache-resident.
-3. **Skip-resident.** Sample fresh each step but skip the memory read for blocks already sitting in cache; statistically identical to plain sampling, cheaper in bytes.
+Every unbiased estimator's Monte Carlo mean matches `dense` within sampling error (largest |z| = 2.4 over all output entries at S=64). Variance falls with sample count `S` with fitted log-log slopes of −1.00 for `santa`, −1.34 for `santa_strat`, and −1.49 for `santa_sys` (S = 8–256, 400 runs, 256 keys). These reproduce the paper's finding that structured sampling beats independent draws.
 
-## What counts as success
+![Variance vs total sample budget](docs/variance_convergence.png)
 
-This is about **correctness and statistics, not speed** (the real speedup lives on datacenter hardware we don't have). Concretely, in priority order:
+For the hybrid, the budget on the x-axis counts both the exact head and the sampled tail (`k_h + S_tail`). At equal total budget, the hybrid's variance is 3.6–6.4× lower than `santa_sys` with `k_h = 4`, and 11–33× lower with `k_h = 16` (budgets 32–256; 800 runs, 256 keys, query scale 4). These synthetic-tensor numbers are single fits with no interval computed.
 
-1. **Variance harness** — prove each estimator is unbiased and that its error falls as `1/S`. Runs on tiny random tensors; this is the scientific core. *If the `1/S` slope doesn't reproduce, nothing downstream is valid.*
-2. **Accuracy harness** — swap the sampled attention into a real small model (Qwen3-4B, BF16) on long-context tasks and measure task accuracy vs sample budget.
-3. **Microbenchmark** — directional kernel-timing only, interpreted through an Amdahl's-law ceiling; we do **not** chase end-to-end speedup numbers on this card. We measure *bytes avoided*, not wall-clock.
+### Real-model perplexity
 
-## Two design choices worth knowing
-
-- **GPU-friendly block sampling.** Memory is read in contiguous chunks, so we also sample ~1–2 KB **blocks** of values rather than scattered single rows, to match coalesced reads. We derived and tested its unbiasedness separately (it holds for every block size). *Finding so far:* on byte-count it doesn't help unless attention mass clusters contiguously — see results below.
-- **We reuse a sibling project for the model.** The accuracy/microbench phases plug into [`../llms`](../llms) — a from-scratch, HuggingFace-bit-exact Qwen3 inference engine (same author, same GPU) — by swapping its attention op directly, rather than patching HuggingFace internals. The statistics core (`ssa/`) stays standalone.
-
-## What's built so far
-
-### 1. The statistical core (tiny random tensors, no model)
-
-- **One swappable interface** `attn(q, K, V, impl=...)` with seven implementations: `dense` (ground truth), `topk` (biased baseline), the unbiased samplers `santa` (i.i.d.), `santa_strat` (stratified), `santa_sys` (systematic), `santa_hybrid` (Idea 1), and `santa_block` (contiguous-block sampling).
-- **A measurement harness** for Monte-Carlo mean + variance-vs-budget, accumulating in float64 so low-precision roundoff is never mistaken for bias. Every result file in `src/ssa/results/` is stamped with git SHA, GPU, and library versions.
-
-Both gates pass: every unbiased estimator's mean matches `dense` within Monte-Carlo error, and variance falls as ~`1/S` (slopes −1.0 i.i.d. / −1.3 stratified / −1.5 systematic — structured sampling beats i.i.d., reproducing the paper).
-
-### 2. The hybrid estimator (Idea 1): a real win *per sample*
-
-`santa_hybrid` computes the top-`k_h` keys exactly and samples only the renormalized remainder. Proven unbiased for every `k_h`/sampler combination, and at a matched **sample** budget it cuts variance sharply — **8× lower at `k_h=4`, 32× lower at `k_h=16`** vs plain systematic, growing with the head's mass share.
-
-![Variance convergence vs total sample budget](docs/variance_convergence.png)
-
-*Variance vs total sample budget (log-log). For the hybrid the budget counts **both** the exact head and the sampled tail (`k_h + S_tail`). Plain i.i.d. falls as `1/S` (slope −1); systematic is steeper; the hybrids fall faster still (−1.9 to −2.1).*
-
-### 3. Real-model perplexity (Qwen3-4B, WikiText-103) — and an honest correction
-
-The estimators run inside the sibling [`../llms`](../llms) Qwen3 engine, swapped in at decode time (prefill stays exact) through a small generic attention hook added to that engine (`ssa` never forks it). A teacher-forced perplexity harness scores real predictions under sampled attention; `ssa.harness.ppl_sweep` traces **perplexity vs value-read fraction**.
+The estimators replace attention inside Qwen3-4B (in BF16, the 16-bit brain floating-point format) during decode, while the prompt is still processed exactly. The model runs on a from-scratch Qwen3 inference engine I wrote separately ([github.com/aaholmes/llms](https://github.com/aaholmes/llms)); a small hook in that engine lets this package swap the decode attention op. `ssa.harness.ppl_sweep` scores teacher-forced perplexity as a function of the fraction of value rows read.
 
 ![Perplexity vs value-read fraction at 4096 context](docs/ppl_frontier_4096.png)
 
-*Qwen3-4B, WikiText-103, 4096 context (8 chunks, 3 seeds). `santa_sys` (green) hits a sharp knee — near-dense by ~3.5% reads. The `santa_hybrid` points (squares) sit on or to the **right** of the sys curve: tied at small budgets, reading more for the same quality at large ones.*
+- `santa_sys` with S=512 reads 3.5% of value rows and raises perplexity by +0.19% (s.d. 0.06%, 3 seeds, 8 chunks of 4096 tokens). At fixed S the read fraction falls as context grows: at S=256 it is 3.8% at 2048 tokens and 2.2% at 4096.
+- The hybrid ties `santa_sys` on reads. `santa_hybrid(k_h=16, S=48)` reads 2.0% for +0.62% (s.d. 0.03%), while `santa_sys` at S=256 reads 2.2% for +0.46% (s.d. 0.05%). The hybrids with large heads reach +0.1% but read 7–8% of rows to do it.
+- The mechanism is collisions. Attention in Qwen3-4B concentrates on few tokens: the participation ratio `1/Σ A²`, the effective number of tokens carrying the weight, averages 14.5 out of 1536 cached tokens (2048-token context, all layers and heads). Sampling with replacement therefore draws the few hot tokens repeatedly, and a GPU cache serves those repeats without another memory read. That cancels the hybrid's variance advantage once reads are counted. A synthetic sweep over concentration (`ssa.harness.crossover`, participation ratio 10 to 493) found no setting where the hybrid reads meaningfully less for equal variance.
+- `topk` is biased and behaves erratically. At 2048 context, k=1 gives perplexity 820 compared with 13.1 for dense, while for k ≥ 16 it scores *below* dense ([figure](docs/ppl_frontier_cheap2k.png)). Truncating the tail changes the model rather than approximating it, so it is not a like-for-like comparison with the unbiased methods.
 
-- **Plain sampling is remarkably good:** `santa_sys` reaches dense-model perplexity (**+0.19%**) reading only **~3.5% of value rows (~28× fewer)** at 4096 context; the read fraction *shrinks* as context grows — it was ~6% at 2048 — because attention concentrates further with length.
-- **The hybrid ties plain sampling on bytes — it does not beat it** (confirmed at both 2048 and 4096). At matched *reads* the two are within ~0–8% (e.g. at 4096, `hybrid(16,48)` is 2.0%/+0.62% vs sys ≈+0.56%); the high-`k_h` hybrids read **7–8%** for the same ~dense quality sys reaches by **~3.5–5%**. The reason is subtle: with-replacement sampling **collides** onto the few high-mass tokens, reading them essentially for free (a real GPU cache serves the repeats from L2), and that "collision leverage" exactly cancels the head's variance advantage. So the hybrid's win is in *variance per sample*, not *bytes per quality* — it would only pay off on hardware that can't reuse a fetched value.
-- **`topk` is a biased red herring** (seen in the [2048 cheap-end sweep](docs/ppl_frontier_cheap2k.png)): catastrophic at low `k` (+6000% perplexity at `k=1`), yet *below* dense for `k≥16` — a denoising artifact of truncating the noisy attention tail, not a fair comparison for the unbiased methods.
+### Contiguous-block sampling
 
-We confirmed the mechanism directly: a [concentration diagnostic](src/ssa/harness/concentration.py) measures attention's effective support at **~14 of ~1500 tokens**, and a closed-form collision formula predicts the measured read fractions to within rounding. A [crossover probe](src/ssa/harness/crossover.py) sweeping concentration finds **no regime where the hybrid decisively wins on bytes** — the two effects cancel everywhere.
-
-### 4. Contiguous-block sampling (`santa_block`)
-
-Unbiased for every block size (gate passes; `B=1`≡`santa`, `B≥n_k`≡`dense`). But **at a fixed byte budget, larger blocks have higher variance *and* read more** — dominated by row-level sampling, because blocks defeat the collision dedup above and waste reads on the cold rows inside each block.
+`santa_block` is unbiased for every block size B (B = 1 reduces to `santa`; B ≥ number of keys reduces to `dense`). On synthetic attention at a fixed budget of 128 reads out of 512 keys, larger blocks give both higher variance and a larger distinct-read fraction (5.8% at B=1, 25% at B=128), because each sampled block spends reads on its cold rows and defeats the collision savings above.
 
 ![Variance vs block size](docs/variance_vs_block.png)
 
-This is on *spatially unstructured* synthetic attention; block sampling's real premise is that attention mass clusters *contiguously*, plus that contiguous reads are cheaper-per-byte on hardware — neither of which this byte-count harness captures.
+Blocks would only pay off if attention mass clustered in contiguous positions, or if contiguous reads were enough cheaper per byte on the hardware; this byte-count harness measures neither. `ssa.harness.plot_blocks` also tests one proposed fix: reorder the cache so each block holds keys with similar content (k-means on the keys). Block sampling stays unbiased under any reordering. The figure above predates that option, so it shows the native order only.
 
-**The proposed fix (Idea 7 — design doc §3.9): reorganize the KV cache so each contiguous block holds *similar* keys.** Then a block is uniformly hot or cold for any query, so a sampled hot block's rows are all useful. Because block sampling is unbiased for *any* grouping, clustering can never introduce bias — it's a pure efficiency substrate (unlike biased cluster-selection methods like Reformer/Routing-Transformer/Quest). And it unlocks a bigger prize — **skipping the *key* reads too** (decide which clusters to fetch from cheap per-cluster summaries). A kernel-free diagnostic on the real model (next section) then settled *how*: estimating a cluster's mass from its moments fails, but a **magnitude-based** estimate works.
+### Skipping key reads
 
----
+Sampling saves value reads, but computing the weights `A` still reads every key. I tested whether cheap per-cluster summaries could decide which key clusters to read at all.
 
-**Tests:** all **90 pass** with no model download or GPU required (`uv run pytest`). The real-model sweeps are reproducible on the GPU box via `python -m ssa.harness.ppl_sweep` / `concentration` / `crossover` / `plot_blocks` / `cluster_diag`.
+A diagnostic on real Qwen3-4B keys (`ssa.harness.cluster_diag`) found two things. Estimating a cluster's total attention weight from its mean and covariance fails, because the weight inside each cluster sits on a single token (within-cluster participation ratio ≈ 1). A *magnitude* estimate ranks better. It clusters keys by direction and keeps each key's true length. With 8-key clusters at the two deepest layers sampled (24 and 35), it captures 99% of the attention weight while reading 0.24–0.32% of keys, compared with a best possible 0.19–0.26%; the Gaussian estimate needs 22–35%. With 16-key clusters it does much worse (8–12% of keys). Setting: one KV head, 1024-token prompt, 32 decode steps, layers 0, 12, 24, 35.
 
-**Cluster diagnostic (Idea 7, design doc §3.10).** A kernel-free Step-0 on real Qwen3-4B keys ([`ssa.harness.cluster_diag`](src/ssa/harness/cluster_diag.py)) settled the "skip the key reads too" idea: the *moment-based* free-energy estimate is **dead** (attention mass sits on a single token per cluster — `within_PR≈1` everywhere — so a 2-moment Gaussian can't estimate it), **but** a *magnitude*-based estimate (cluster by direction, store per-key magnitudes, rank by `Σ e^{|k_j|(q·ĉ_b)}`) recovers **near-oracle key-read selection at the concentrated deep layers** (~0.2–0.3% of keys vs the Gaussian's 6–35%). **End-to-end (`skip_k`, §3.11), the selection was tested and failed:** deterministically reading only the selected clusters needs ~60% of keys to preserve perplexity and collapses (+92%) below that, because attention's heavy tail can't be dropped — plain `santa_sys` reaches dense at ~9% reads, ~10× better. So the skip-K / clustering line is **closed, negative**; the lasting value is the *why* (the tail forbids skipping key-reads).
+End to end, the ranking was not enough. With `skip_k`, which reads only the top-ranked clusters and drops the rest, perplexity is +1.4% at 60% of keys read and +92% at 17% (640-token context, 2 chunks, 1 seed). With `santa_sys` at S=256, 9.2% of rows are read and perplexity is within 1% of dense. Dropping clusters discards the long tail of small attention weights, and that tail matters in aggregate; sampling covers it cheaply. Two variants remain untested: selecting clusters to a fixed key budget, and an unbiased version that samples the unselected clusters rather than dropping them.
 
-**The magnitude estimate — what it is, and how it becomes a bound.** Split each key into magnitude × direction, `k_j = |k_j|·k̂_j`, so the true term is `e^{q·k_j} = e^{|k_j|(q·k̂_j)}`. The estimate replaces each key's *own* direction with the cluster's center direction `ĉ_b` but keeps its *true* magnitude:
+**The magnitude estimate and its bounds.** Write each key as length times direction, `k_j = |k_j| k̂_j`, so the exact term is `e^{q·k_j} = e^{|k_j|(q·k̂_j)}`. The estimate keeps each key's true length but replaces its direction with the cluster's mean direction `ĉ_b`:
 
 ```
 m̂_b = Σ_{j∈b} e^{|k_j|(q·ĉ_b)}    estimates    m_b = Σ_{j∈b} e^{|k_j|(q·k̂_j)}
 ```
 
-So it's a per-term plug-in estimate of `e^{q·k_j}`, **exact iff the cluster has zero angular spread**. The error lives in the exponent, `s_j − ŝ_j = |k_j|·q·(k̂_j − ĉ_b)`, bounded by `|k_j|·‖q‖·ρ_b` (Cauchy–Schwarz), where `ρ_b = max_{j∈b}‖k̂_j − ĉ_b‖` is the cluster's **angular** radius. Adding/subtracting that term gives rigorous bounds:
+It is exact when all keys in the cluster point in one direction. The exponent error is `|k_j| q·(k̂_j − ĉ_b)`, which the Cauchy–Schwarz inequality bounds by `|k_j| ‖q‖ ρ_b`, where `ρ_b = max_{j∈b} ‖k̂_j − ĉ_b‖` is the cluster's angular radius. That gives rigorous bounds:
 
 ```
 Σ_j e^{|k_j|[(q·ĉ_b) − ‖q‖ρ_b]}  ≤  m_b  ≤  Σ_j e^{|k_j|[(q·ĉ_b) + ‖q‖ρ_b]}
 ```
 
-`m̂_b` is the `ρ_b = 0` *center* of this band — what you **rank** by (great when direction-clustering makes `ρ_b` small). The **upper** bound is the unbiased safety net for skip-K: never skip a cluster whose upper bound could beat your current best (MIPS branch-and-bound ⇒ provably never miss the hottest token). It's strictly tighter than the earlier Euclidean-radius bound `|b|·e^{q·c_b + ‖q‖R_b}` because it uses the *exact* magnitudes and only bounds *direction*. Selection (rank by center) and guarantee (use upper bound) are the same expression at `ρ_b = 0` vs `+ρ_b`, both tightening as direction-clustering shrinks `ρ_b`.
+`m̂_b` is the centre of this band and is what clusters are ranked by. The upper bound supports a guarantee: a cluster whose upper bound falls below the best score found so far cannot hold the top token, so a branch-and-bound search that skips only such clusters never misses it. Because it uses each key's exact length and bounds only the direction, it is tighter than the simpler bound `|b| e^{q·c_b + ‖q‖R_b}` built from the cluster's Euclidean radius `R_b`.
 
-**Not yet built / next:** within skip-K, a *budget-ranked* variant and the *unbiased* IS-tail variant (both untested, poor-but-unproven prognosis); and the other ideas — reuse/resident caching (Ideas 2–3), cross-head sharing (Ideas 4–5), the large value-memory architecture (Idea 6), and a real gather-kernel microbenchmark. The validated headline stands — **plain unbiased systematic sampling reaches dense quality at ~3.5–9% of value reads.**
+### Bias of sampled decoding
 
-## Glossary — every named concept, one line
+Each sampled step is unbiased, but the model feeds that step through nonlinear layers, so the expected next-token distribution still differs from the dense one (a Jensen gap). `ssa.harness.bias_isolate` separates this systematic bias from per-draw noise by averaging 32 draws per step. It measures both as total variation distance (TVD) from the dense model's next-token distribution. Setting: Qwen3-4B, code corpus, 2040 decode steps.
 
-The through-line: the *physics* of a cluster's attention mass (left) meets the *computer science* of finding it cheaply (right). We *expected* them to join at "estimate a cluster's free energy from its moments" — but the diagnostic killed that (mass sits on one token per cluster) and the working route turned out to be ranking clusters by a magnitude estimate (§3.10).
+![Bias and variance vs S](src/ssa/results/bias_split_plot.png)
 
-**Statistical mechanics & probability**
-- **Boltzmann / Gibbs distribution** — `p_i ∝ e^{−E_i/T}`; softmax attention *is* this, with score `q·k` = −energy, so the weights are a Gibbs distribution over tokens.
-- **Partition function `Z`** — the normalizer `Σ e^{score}` (the softmax denominator); a cluster's mass is its own partition function.
-- **Free energy / log-sum-exp** — `log Z`, the smooth max; the cluster's "effective score" we sample by, `log⟨e^{q·k}⟩_b`, is its free energy.
-- **Jensen's inequality** — for convex `f`, `E[f(X)] ≥ f(E[X])`; the gap is why a spread cluster (mean-of-exp) samples *hotter* than its center (exp-of-mean).
-- **Cumulants / cumulant generating function** — derivatives of `log Z` give mean, variance, …; their series *is* `s_b^eff = mean + ½var + …`.
-- **Exponential family / log-normalizer** — family where `∇log Z = mean`, `∇²log Z = covariance`; why `½ qᵀΣ_b q` is the natural second-order term.
-- **Fisher information** — the curvature `∇²log Z = covariance`; here exactly the fluctuation term `qᵀΣ_b q`.
-- **Laplace / saddle-point approximation** — approximate a peaked sum by a Gaussian around its max; our mass estimate `e^{q·c_b + ½qᵀΣ_b q}` is this for a cluster.
-- **Mean-field / saddle value** — collapse a distribution to its average; `e^{q·c_b}` (exp of the mean) is the mean-field estimate that misses fluctuations.
-- **One-loop correction** — the Gaussian-fluctuation term past the saddle; here the `½ qᵀΣ_b q`.
-- **Chebyshev–Markov moment problem** — the tightest bound on `E[f(X)]` given a few moments + support, attained by an extremal few-point distribution; gives a mass upper bound *sharper* than "all members at the max."
-- **Participation ratio (≡ inverse Simpson ≡ 1/Herfindahl)** — `1/Σ p²`, the effective number of components carrying the mass; attention's is **~14 of ~1500** tokens.
-- **Entropy** — `−Σ p log p`, another concentration gauge; `e^{entropy} ≈ 14` cross-checks the participation ratio.
+| S | bias (TVD) | bias share of per-draw error | bias with LoRA |
+|---:|---:|---:|---:|
+| 8 | 0.062 | 74% | 0.059 |
+| 16 | 0.026 | 58% | 0.024 |
+| 32 | 0.011 | 42% | 0.011 |
+| 64 | 0.0056 | 36% | 0.0054 |
 
-**Estimation & variance reduction**
-- **Monte Carlo** — estimate a sum by random draws; the whole sampled-attention idea.
-- **Importance sampling** — unbiased estimation under a cheap proposal, reweighting by true/proposal; lets us sample clusters by a centroid proposal yet stay exact.
-- **Rao–Blackwellization** — replace a random estimate by its exact conditional expectation to cut variance; computing the deterministic head *exactly* is literally this.
-- **Control variate** — subtract a correlated, known-mean term to reduce variance; the other lens on the exact-head hybrid.
-- **Stratified sampling** — equal-mass strata, one draw each; `santa_strat`.
-- **Systematic sampling** — one shared offset, evenly spaced (the "comb"); `santa_sys`.
-- **Cauchy–Schwarz** — `|q·δ| ≤ ‖q‖‖δ‖`; turns a cluster's radius `R_b` into the max-score bound `q·c_b + ‖q‖R_b`.
+The bias falls roughly as `1/S` (fitted exponent −1.16) and dominates the per-draw error at low S. A rank-16 LoRA adapter trained per S to reduce TVD (`ssa.harness.debias_train`) removes 0–8% of it. Training on the multi-draw average instead, which targets bias directly, does no better (S=16: 0.025; S=32: 0.011). On WikiText-103 at S=32 the bias is 0.034 and the adapter lowers it to 0.033. These runs saved only per-S averages, not per-step values, so no intervals are available.
 
-**Search & data structures**
-- **Maximum Inner Product Search (MIPS)** — find the keys with largest `q·k`; "never miss the hottest token" is top-1 MIPS.
-- **Branch and bound** — prune a search with cheap bounds that rule regions out; the radius bound skips clusters that provably can't hold the max.
-- **Fagin's Threshold Algorithm (TA/NRA)** — provably read-*minimal* top-k retrieval via a running threshold; our "read the best, set `s*`, prune the rest" is this.
-- **k-means / Lloyd's algorithm** — cluster points to minimize within-cluster radius; the baseline key-grouping (we want a query-aware variant instead).
-- **Mahalanobis distance** — covariance-weighted distance; the *right* metric, since what matters is `qᵀΣq` along query directions, not Euclidean radius.
-- **Cuckoo hashing** — insertion by displacement chains where one empty slot propagates; the model for online KV-cluster maintenance.
-- **Gram matrix** — the matrix of pairwise `k_i·k_j`; the "relative dot products" fixing a cluster's within-block score geometry.
+## Not yet built
 
-**Attention / ML prior art**
-- **RoPE (Rotary Position Embedding)** — rotates `q,k` by position so the score depends only on relative offset; its fast high-frequency rotation may scramble content-clustering.
-- **Modern Hopfield Networks ("Hopfield Networks is All You Need")** — derives attention as the fixed point of an *energy/free-energy* minimization; closest prior art to our energy framing (and the source of the "…is All You Need" riff).
-- **Reformer (LSH attention)** — buckets keys by locality-sensitive hashing; prior art for grouping keys, but *biased* hard selection.
-- **Routing Transformer** — k-means-clusters keys and attends within clusters; closest "cluster the keys" prior art, again biased.
-- **Quest / ClusterKV** — select KV blocks by representative vectors at decode; prior art for block selection, biased rather than unbiased-sampled.
-- **Amdahl's law** — total speedup is capped by the part you *don't* accelerate (`1/w`, `w` = weight-read share); why faster attention can't beat the weight-bandwidth ceiling at decode.
-- **SANTA / S²ANTA** — the paper we reproduce: unbiased semi-stochastic sampling of the KV cache; everything here builds on its estimator.
+- Reusing samples across decode steps, reweighted by an importance ratio, and skipping reads for blocks still in the GPU's L2 cache.
+- Sharing one sample set across attention heads.
+- Larger per-token value vectors, of which only a sampled slice is ever read.
+- A real gather-kernel benchmark. The results above count bytes read, not wall-clock time; the one timing note is [docs/timing_unique_counts.md](docs/timing_unique_counts.md).
+
+## Glossary
+
+- **Participation ratio** — `1/Σ p²`, the effective number of items carrying a distribution's mass.
+- **Partition function / free energy** — softmax weights have the Boltzmann form `p_i ∝ e^{q·k_i}`; a cluster's summed weight is its partition function `Z_b`, and `log Z_b` is its free energy.
+- **Jensen gap** — the difference `E[f(X)] − f(E[X])` for a nonlinear `f`; why unbiased attention outputs can still bias the model's output.
+- **Importance sampling** — drawing from a convenient distribution and reweighting by true/proposal probability to stay unbiased.
+- **Rao–Blackwellization / control variate** — replacing part of a random estimate by its exact value to reduce variance; the hybrid's exact head does this.
+- **Stratified / systematic sampling** — splitting the distribution into `S` equal-mass strata and drawing once per stratum, independently (stratified) or with one shared offset (systematic).
+- **Maximum inner product search (MIPS)** — finding the keys with the largest `q·k`.
+- **Branch and bound** — a search that discards regions whose bound shows they cannot contain the best answer.
+- **LoRA (low-rank adaptation)** — fine-tuning by adding small trainable low-rank matrices to frozen weights.
+- **TVD (total variation distance)** — half the L1 distance between two probability distributions.
+- **Prior art that selects keys with a bias** — Reformer (hashes keys into buckets), Routing Transformer (k-means clusters of keys), and Quest/ClusterKV (select cache blocks by representative vectors). All select deterministically, unlike the unbiased sampling here.
 
 ## Repository
 
-- `PROTOTYPE_DESIGN.md` — full spec, phase ordering, and correctness gates. **Read this first** (especially §0.5, the current decisions).
-- `CLAUDE.md` — orientation for AI coding assistants working in this repo.
-- `santa-wiki.html` — background notes on the SANTA method.
+- `src/ssa/attn/` — the estimators; `src/ssa/sampling/` — per-head cumulative distributions and index draws.
+- `src/ssa/harness/` — variance, perplexity, concentration, clustering, and bias harnesses, plus plotting. Real-model harnesses need a CUDA GPU and download Qwen3-4B.
+- `src/ssa/models/patch.py` — the adapter that plugs the estimators into the inference engine.
+- `src/ssa/results/` — result files and figures.
+- `run_bias_isolate.sh`, `run_multidraw_debias.sh` — the bias and adapter experiments; each step is skipped if its output exists.
+
+Setup: `uv sync`, then `uv run pytest`. The engine dependency is installed from [github.com/aaholmes/llms](https://github.com/aaholmes/llms) at a pinned commit.
+
+## License
+
+Apache License 2.0; see [LICENSE](LICENSE).

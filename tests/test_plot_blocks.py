@@ -41,5 +41,5 @@ def test_plot_writes_png(tmp_path):
     q, K, V = make_qkv(Geom(H=8, H_kv=2, d=16, n_k=128), seed=3, dtype=torch.float64)
     rows = build_block_curve(q, K, V, read_budget=32, B_values=[1, 8, 64], runs=150)
     out = tmp_path / "vb.png"
-    plot_block_curve(rows, out, title="t")
+    plot_block_curve(rows, out)
     assert out.exists() and out.stat().st_size > 0

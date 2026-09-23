@@ -1,6 +1,6 @@
-"""Shared pytest fixtures + markers for the ssa Phase A suite.
+"""Shared pytest fixtures + markers for the ssa test suite.
 
-Mirrors the device/dtype/marker conventions of the sibling ``../llms`` engine:
+Mirrors the device/dtype/marker conventions of the Qwen3 engine in github.com/aaholmes/llms:
 session-scoped ``device``/``dtype``, a ``requires_cuda`` marker auto-skipped when
 no NVIDIA GPU is present, so the CPU subset runs in CI.
 """
@@ -18,7 +18,7 @@ def device() -> torch.device:
 
 @pytest.fixture(scope="session")
 def dtype() -> torch.dtype:
-    """Operating dtype for estimator ops — bf16 to match the engine (design §0.5)."""
+    """Operating dtype for estimator ops — bf16 to match the engine."""
     return torch.bfloat16
 
 

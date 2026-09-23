@@ -3,10 +3,11 @@
 Motivation. Sampled attention is unbiased in attention *output* but biased in
 *logits*: logits are a nonlinear function of the attention output, so
 `E[softmax(logits)] ≠ softmax(dense logits)` (a Jensen gap). That systematic bias
-is the correctable part — the thing a debiasing LoRA can, in principle, remove.
+is the correctable part — the thing a debiasing low-rank adapter (LoRA) can, in
+principle, remove.
 
-The trap the earlier `accept_sweep` fell into. A SINGLE stochastic draw per step
-measures `TVD(p_dense, p_1draw)`, which mixes bias and variance. With santa_sys the
+Why `accept_sweep` alone cannot see it. A SINGLE stochastic draw per step measures
+the total variation distance `TVD(p_dense, p_1draw)`, which mixes bias and variance. With santa_sys the
 attention-output error is `ε`, `Var(ε) ~ 1/S`, so:
 
     single-draw fluctuation  ~ O(1/√S)   (mean-zero, variance)
@@ -132,7 +133,7 @@ def main() -> None:
         from mla.heal import load_trainable, merge_lora, wrap_lora
         wrap_lora(model, rank=args.lora_rank, alpha=args.lora_alpha)
         load_trainable(model, args.lora)
-        merge_lora(model)  # fold in → plain model, same decode path
+        merge_lora(model)  # fold in → plain model, unchanged decode path
         print(f"[bias] loaded + merged debias-LoRA {args.lora}", flush=True)
 
     chunks = _load_chunks(args.model, args.corpus, max_chunks=args.max_chunks,

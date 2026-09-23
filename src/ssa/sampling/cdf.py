@@ -1,4 +1,4 @@
-"""Per-head CDF construction and inverse-CDF lookup (design doc §2).
+"""Per-head cumulative distribution function (CDF) construction and inverse-CDF lookup.
 
 The sampling estimators all reduce to: build the cumulative distribution ``F``
 from the attention weights ``A``, then map threshold values in ``[0, 1)`` back to

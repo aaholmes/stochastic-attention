@@ -1,4 +1,4 @@
-"""GATE: estimator variance-trace falls as ~1/S (design §7, the Phase A gate).
+"""Variance-decay test: estimator variance-trace falls as ~1/S.
 
 The paper reports log-log slopes near -1 (-1.1 iid / -1.27 strat / -1.29 sys). On
 tiny float64 tensors we gate on the qualitative result: each slope is clearly ~1/S

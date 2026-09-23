@@ -1,7 +1,7 @@
 """Content-clustered block layout: permutation validity + the unbiasedness gate.
 
 Reordering the key axis so similar keys sit contiguously is a pure efficiency move:
-``santa_block`` is unbiased for *any* partition (design doc §0.5), so clustering can
+``santa_block`` is unbiased for *any* partition, so clustering can
 change variance/bytes but must never change the expectation. These tests pin that —
 the clustered layout stays unbiased vs ``dense`` — plus the mechanical guarantees
 that ``apply_permutation`` is a genuine per-head permutation and leaves the exact

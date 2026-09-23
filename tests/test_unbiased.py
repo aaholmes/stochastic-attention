@@ -1,4 +1,4 @@
-"""GATE: the santa* estimators are unbiased — E[estimate] == dense (design §7).
+"""Unbiasedness test: the santa* estimators satisfy E[estimate] == dense.
 
 We assert the Monte-Carlo mean lands within a few standard errors of the float64
 dense reference, coordinate-wise. topk is the biased baseline and is explicitly
@@ -34,7 +34,7 @@ def test_mc_mean_matches_dense(impl):
 @pytest.mark.parametrize("tail", ["sys", "strat", "iid"])
 @pytest.mark.parametrize("k_h", [2, 8])
 def test_hybrid_mc_mean_matches_dense(k_h, tail):
-    # Idea 1 must be exactly unbiased for any distribution (design §7.3).
+    # The hybrid must be exactly unbiased for any distribution.
     q, K, V = make_qkv(Geom(H=4, H_kv=2, d=16, n_k=128), seed=0, dtype=torch.float64)
     ref = dense(q, K, V).to(torch.float64)
 

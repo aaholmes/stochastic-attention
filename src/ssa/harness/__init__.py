@@ -1,7 +1,7 @@
-"""Phase A/B measurement harness: Monte-Carlo mean + variance-trace vs S.
+"""Measurement harness: Monte-Carlo mean + variance-trace vs sample budget S.
 
-This is the scientific core (design doc §0, §7): proves unbiasedness and the
-~1/S variance decay that gates everything downstream.
+This is the scientific core: it tests unbiasedness and the ~1/S variance decay
+that every downstream result depends on.
 """
 
 from __future__ import annotations

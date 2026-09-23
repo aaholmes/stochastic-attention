@@ -1,7 +1,8 @@
 """The swappable attention interface ``attn(q, K, V, impl=..., **cfg)``.
 
 Implementations register themselves in ``_REGISTRY`` via the ``@register`` decorator;
-``attn`` dispatches by name. Phase A ships: dense, topk, santa, santa_strat, santa_sys.
+``attn`` dispatches by name. Implementations: dense, topk, santa, santa_strat, santa_sys,
+santa_hybrid, santa_block, skip_k.
 """
 
 from __future__ import annotations

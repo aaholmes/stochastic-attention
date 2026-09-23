@@ -1,6 +1,6 @@
 """Sampling-primitive unit tests (CDF + inverse + index draws).
 
-These are the load-bearing mechanics of the paper (design doc §2), so they are
+Every estimator in the paper is built on these mechanics, so they are
 tested in isolation on hand-checkable distributions before any estimator uses them.
 """
 

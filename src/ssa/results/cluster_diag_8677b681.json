@@ -1,5 +1,5 @@
 {
-  "git_sha": "80f7cf7c0f159770a4ec6689a5bb1f623ea6767e",
+  "git_sha": "8677b6813d8e99373a225fa360e595fc622dac93",
   "torch_version": "2.12.1+cu130",
   "cuda_version": "13.0",
   "python_version": "3.13.5",

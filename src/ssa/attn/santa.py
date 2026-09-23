@@ -2,7 +2,7 @@
 
 Each draws ``S`` value rows (with replacement) from the per-head attention
 distribution and returns their simple average ``(1/S) Σ V[J_s]`` — an unbiased
-estimate of ``dense`` (design doc §2; wiki Eq. 4). The three differ only in how
+estimate of ``dense``. The three differ only in how
 the ``S`` indices are drawn (see ``ssa.sampling.draws``).
 
 Pass ``return_info=True`` to also get the sampled indices and per-head unique-key

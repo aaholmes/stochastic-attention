@@ -1,5 +1,5 @@
 {
-  "git_sha": "f733f08aac1fa96eb65c0c9fe03a9638661069e2",
+  "git_sha": "24a79708e7ea912ec61eebe17953fd4d9e55e745",
   "torch_version": "2.12.1+cu130",
   "cuda_version": "13.0",
   "python_version": "3.13.5",
@@ -15,7 +15,7 @@
   "model": "Qwen/Qwen3-4B",
   "corpus": "code",
   "draws": 32,
-  "lora": "src/ssa/results/debias_lora_code_s64.pt",
+  "lora": "ssa.harness.debias_train --corpus code --S 64 --steps 300 --pos-per-chunk 32 --val-every 50 (weights not included)",
   "chunk_len": 288,
   "prefill_len": 32,
   "results": [

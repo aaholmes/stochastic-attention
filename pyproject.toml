@@ -1,13 +1,14 @@
 [project]
 name = "ssa"
 version = "0.1.0"
-description = "Semi-stochastic sparse attention — Phase A variance/unbiasedness core"
+description = "Semi-stochastic sparse attention: unbiased sampled estimators of LLM decode attention"
+license = "Apache-2.0"
 requires-python = ">=3.11,<3.14"
 dependencies = [
     "torch>=2.5",
     "numpy>=1.26",
-    # Sibling Qwen3 inference engine (public). Provides the `engine` package and
-    # the decode attention seam we plug into for the Phase C accuracy harness.
+    # Qwen3 inference engine from github.com/aaholmes/llms. Provides the `engine`
+    # package and the decode-attention hook the real-model harnesses plug into.
     "specd",
     "transformers>=4.45",
     "datasets>=2.18",
@@ -15,7 +16,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-specd = { path = "../llms", editable = true }
+specd = { git = "https://github.com/aaholmes/llms", rev = "4e2c91180890feedad76cb128f648aceef045012" }
 
 [dependency-groups]
 dev = ["pytest>=8.0"]

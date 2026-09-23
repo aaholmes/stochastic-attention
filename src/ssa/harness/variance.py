@@ -1,6 +1,6 @@
-"""Phase A measurement core: Monte-Carlo mean + variance-trace vs sample budget S.
+"""Measurement core: Monte-Carlo (MC) mean + variance-trace vs sample budget S.
 
-This is the scientific gate (design doc §7): the ``santa*`` estimators must (a) be
+These are the two properties every result depends on: the ``santa*`` estimators must (a) be
 unbiased — their MC mean converges to ``dense`` — and (b) have a variance-trace that
 falls as ~1/S (a log-log slope near -1). Everything is accumulated in **float64**
 regardless of the estimator's operating dtype, so low-precision roundoff is never
@@ -90,10 +90,10 @@ def variance_sweep(
     return SweepResult(impl, list(S_values), vt, fit_slope(S_values, vt))
 
 
-# --- entrypoint: stamped Phase A report --------------------------------------
+# --- entrypoint: stamped synthetic report --------------------------------------
 
 def _default_qkv(seed: int) -> tuple[dict, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Tiny float64-on-CPU decode geometry for the standalone Phase A report."""
+    """Tiny float64-on-CPU decode geometry for the standalone synthetic report."""
     H, H_kv, d, n_k = 8, 2, 16, 256
     gen = torch.Generator().manual_seed(seed)
     q = torch.randn(H, d, generator=gen, dtype=torch.float64)

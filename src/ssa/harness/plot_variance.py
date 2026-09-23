@@ -1,4 +1,4 @@
-"""Variance convergence vs total sample budget (the Phase A/B "money figure").
+"""Variance convergence vs total sample budget on synthetic attention.
 
 For the plain samplers the x-axis is the sample count ``S``. For ``santa_hybrid``
 the budget counts **both** halves: the deterministic head and the stochastic tail,
@@ -66,7 +66,7 @@ def build_curves(
     return curves
 
 
-def plot_curves(curves: dict, path, *, title: str) -> None:
+def plot_curves(curves: dict, path, *, title: str | None = None) -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -75,10 +75,11 @@ def plot_curves(curves: dict, path, *, title: str) -> None:
     for label, c in curves.items():
         ax.loglog(c["x"], c["var"], marker="o", label=f"{label}  (slope {c['slope']:+.2f})")
     ax.set_xlabel("total samples  (hybrid: $k_h + S_{tail}$)")
-    ax.set_ylabel("variance-trace of estimator")
-    ax.set_title(title)
-    ax.grid(True, which="both", ls=":", alpha=0.5)
-    ax.legend(fontsize=8)
+    ax.set_ylabel("variance trace of estimator (summed over output dims)")
+    if title:
+        ax.set_title(title)
+    ax.grid(True, which="major", ls=":", alpha=0.3)
+    ax.legend(fontsize=8, frameon=False)
     fig.tight_layout()
     fig.savefig(path, dpi=130)
     plt.close(fig)
@@ -114,7 +115,7 @@ def main() -> None:
     sha = payload.get("git_sha", "nogit")[:8]
     png = out_dir / f"variance_convergence_{sha}.png"
     js = out_dir / f"variance_convergence_{sha}.json"
-    plot_curves(curves, png, title=f"Variance convergence (q_scale={args.scale}, n_k={args.n_k})")
+    plot_curves(curves, png)
     js.write_text(json.dumps(payload, indent=2))
 
     for label, c in curves.items():

@@ -1,4 +1,4 @@
-"""Result-file provenance stamping (design doc §6).
+"""Result-file provenance stamping.
 
 Every result dict gets a header: git SHA, GPU name + driver, torch/CUDA versions.
 Callers fold in their own seeds and exact tensor shapes. Reproducibility is the

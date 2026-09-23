@@ -34,5 +34,5 @@ def test_plot_writes_png(tmp_path):
     q, K, V = make_qkv(Geom(H=8, H_kv=2, d=16, n_k=128), seed=2, dtype=torch.float64)
     curves = build_curves(q, K, V, budgets=[8, 16, 32], hybrid_k_h=(4,), runs=150)
     out = tmp_path / "conv.png"
-    plot_curves(curves, out, title="test")
+    plot_curves(curves, out)
     assert out.exists() and out.stat().st_size > 0

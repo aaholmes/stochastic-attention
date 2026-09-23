@@ -1,8 +1,8 @@
-"""Phase C sweep: perplexity vs read budget across deterministic/stochastic splits.
+"""Real-model sweep: perplexity vs read budget across deterministic/stochastic splits.
 
-Headline artifact: PPL increase vs value-read fraction for `dense`, `santa_sys`
+Main output: perplexity (PPL) increase vs value-read fraction for `dense`, `santa_sys`
 at several budgets, and `santa_hybrid` at several (k_h, S_tail) splits at matched
-total budget. The end-to-end analog of the Phase A variance-vs-budget result.
+total budget. The end-to-end analogue of the synthetic variance-vs-budget result.
 
 Run (user-launched; downloads ~8 GB, GPU, sequential decode is slow):
     uv run python -m ssa.harness.ppl_sweep --model Qwen/Qwen3-4B --max-chunks 16

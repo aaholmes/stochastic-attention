@@ -1,4 +1,4 @@
-"""`skip_k` — magnitude-ranked cluster selection (the end-to-end skip-K test, §3.10).
+"""`skip_k` — magnitude-ranked cluster selection (the end-to-end skip-the-key-reads test).
 
 At decode, instead of reading all keys, cluster the keys by *direction* (spherical
 k-means), rank clusters by the **magnitude estimate** `m̂_b = Σ_{j∈b} e^{|k_j|(q·ĉ_b)/√d}`
@@ -9,7 +9,7 @@ the top clusters covering `coverage` of the estimated mass, and compute attentio
 This is the *biased* (deterministic top-cluster) version — it drops the un-selected
 tail rather than importance-correcting it — so it measures the *ceiling*: does
 magnitude-selected attention preserve perplexity at a small read fraction? The
-unbiased variant (selected head + IS-sampled tail) is the follow-up.
+unbiased variant (selected head + importance-sampled tail) is untested.
 
 `coverage → 1` selects every cluster ⇒ exact `dense`. The read count is the number
 of selected keys (full K/V fetched); the magnitude scalars used for selection add

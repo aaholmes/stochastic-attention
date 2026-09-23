@@ -1,7 +1,7 @@
-"""Semi-stochastic sparse attention — Phase A statistical core.
+"""Semi-stochastic sparse attention — the statistical core.
 
 A self-contained, model-free package implementing the swappable ``attn`` interface
-and the variance/unbiasedness harness that gates the whole project (design doc §7).
+and the harness that tests every estimator for unbiasedness and ~1/S variance decay.
 """
 
 from __future__ import annotations

@@ -3,7 +3,7 @@
 Collisions in with-replacement sampling are governed by how *concentrated* the
 attention distribution is — not by context length. This records, per head/layer
 over real decode steps, the entropy and participation ratio of ``A = softmax(qKᵀ/√d)``,
-the cumulative mass of the top-k tokens, and — the money quantity — the **expected
+the cumulative mass of the top-k tokens, and — most importantly — the **expected
 unique-read fraction at a given sample budget**:
 
     E[#unique | S draws] / n_k  =  (1/n_k) Σ_j [1 − (1 − A_j)^S]

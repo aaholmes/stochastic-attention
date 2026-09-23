@@ -1,13 +1,13 @@
-"""Acceptance / TVD of stochastic-attention decode vs the dense model.
+"""Acceptance / total variation distance (TVD) of stochastic-attention decode vs the dense model.
 
 The ppl_sweep measures *perplexity* under sampled attention. This measures the
-quantity a speculative-decode verifier (or a bias-correcting LoRA) actually
+quantity a speculative-decode verifier (or a bias-correcting low-rank adapter, LoRA) actually
 cares about: how close the sampled-attention next-token distribution is to the
 *dense* model's, token for token, as a function of read budget.
 
 For each decode step (teacher-forced, dense prefill then true tokens one at a
 time through the sparse decode seam) we compare the sampled-attention logits to
-the dense logits of the *same* model at the *same* step:
+the dense logits of the unmodified model at that decode step:
 
     acceptance = Σ_i min(p_dense_i, p_stoch_i) = 1 − TVD(p_dense, p_stoch)
 
@@ -17,8 +17,7 @@ bias a debiasing LoRA would try to remove. Sampling is unbiased in *attention
 output* but biased in *logits* (softmax + MLP are nonlinear), so acceptance < 1
 even in expectation; this sweep quantifies that gap vs read-fraction.
 
-Private (ssa): the stochastic-attention debiasing bet. Imports the dense engine
-from the sibling public `specd`/`engine`; the novel application stays here.
+Imports the model engine from the `specd` package (github.com/aaholmes/llms).
 
 Run (GPU, sequential decode — slow):
     uv run python -m ssa.harness.accept_sweep --model Qwen/Qwen3-4B \
@@ -141,7 +140,7 @@ def main() -> None:
         from mla.heal import load_trainable, merge_lora, wrap_lora
         wrap_lora(model, rank=args.lora_rank, alpha=args.lora_alpha)
         load_trainable(model, args.lora)
-        merge_lora(model)  # fold in → plain model, same decode path
+        merge_lora(model)  # fold in → plain model, unchanged decode path
         print(f"[accept] loaded + merged debias-LoRA {args.lora}", flush=True)
 
     chunks = _load_chunks(args.model, args.corpus, max_chunks=args.max_chunks,

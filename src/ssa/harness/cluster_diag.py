@@ -1,11 +1,11 @@
-"""Cluster diagnostic — does the free-energy clustering idea (§3.9) work on real attention?
+"""Cluster diagnostic — does clustering keys by content work on real attention?
 
-The decisive, kernel-free Step-0: on real Qwen3-4B keys/queries, cluster the
-(post-RoPE) keys and measure whether the cheap per-cluster *summary* is enough to
+A kernel-free first test: on real Qwen3-4B keys/queries, cluster the
+keys (after rotary position embedding, RoPE) and measure whether the cheap per-cluster *summary* is enough to
 (a) keep blocks uniformly hot/cold, (b) estimate each cluster's mass (free energy)
 well, and (c) prune most clusters while still capturing the attention mass. If these
-hold, the clustered-KV / skip-K direction is alive; if not, we've learned it for the
-price of a forward pass.
+hold, clustering the key-value cache to skip key reads is worth pursuing; if not,
+we've learned it for the price of a forward pass.
 
 All masses are computed in a max-shifted, float64 frame for numerical safety; the
 shift cancels in every ratio and in the free-energy *error*.
@@ -150,7 +150,7 @@ def query_whiten(K: torch.Tensor, Q: torch.Tensor) -> torch.Tensor:
     Euclidean k-means on the result minimizes within-cluster *score* variance
     `tr(C_q Σ_b)` (what the free-energy estimate needs) instead of raw key spread
     `tr(Σ_b)` — it scales up the directions queries actually point and collapses the
-    ones no query looks at (the §3.9 "query-aware / Mahalanobis" objective).
+    ones no query looks at (a query-aware, Mahalanobis-distance objective).
     """
     Q = Q.to(torch.float64)
     Cq = (Q.t() @ Q) / Q.shape[0]                                # [d, d]
@@ -167,7 +167,7 @@ def _label_schemes(K, B, seed, Q=None):
     schemes["kmeans_sphere"] = kmeans(Kn, k, seed=seed)[0]       # cluster by direction only
     if Q is not None:                                            # query-whitened (Mahalanobis)
         schemes["kmeans_qw"] = kmeans(query_whiten(K, Q), k, seed=seed)[0]
-    schemes["contiguous"] = (torch.arange(n) // B).clamp(max=k - 1)   # §3.8 position blocks
+    schemes["contiguous"] = (torch.arange(n) // B).clamp(max=k - 1)   # position blocks
     g = torch.Generator().manual_seed(seed)
     schemes["random"] = (torch.randperm(n, generator=g) // B).clamp(max=k - 1)
     return schemes, k

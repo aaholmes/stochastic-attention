@@ -1,4 +1,4 @@
-"""Idea 1 — santa_hybrid: contract, known limits, and variance reduction.
+"""Hybrid estimator santa_hybrid: contract, known limits, and variance reduction.
 
 The hybrid keeps the top-k_h keys exactly and samples the renormalized tail, so
 it must (a) reduce to dense when the head covers everything, (b) reduce to the

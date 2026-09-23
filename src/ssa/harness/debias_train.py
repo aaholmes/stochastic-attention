@@ -1,11 +1,11 @@
-"""Train a LoRA to DEBIAS stochastic-attention decode toward the dense model.
+"""Train a low-rank adapter (LoRA) to DEBIAS stochastic-attention decode toward the dense model.
 
-The novel bet: sampled attention is unbiased in *attention output* but biased in
+The hypothesis: sampled attention is unbiased in *attention output* but biased in
 *logits* (softmax + MLP are nonlinear → a per-draw Jensen gap). That systematic
 component is correctable. We attach a LoRA to the model and train it, teacher-
-forced through the decode seam, to minimize TVD between the sampled-attention
+forced through the decode seam, to minimize the total variation distance (TVD) between the sampled-attention
 logits (student, LoRA on) and the original dense logits (teacher, LoRA off) — i.e.
-to maximize single-token acceptance of the cheap sampled model against the exact
+to maximize single-token acceptance of the cheap sampled model relative to the exact
 model. If it works, the usable read-fraction drops at fixed acceptance.
 
 Tractable training. A decode step at position t reads cache[:t]; the KV cache is
@@ -15,8 +15,8 @@ with no-grad, then score positions in DECREASING order: each grad'd stochastic
 decode step at t reads only frozen (no-grad) cache entries < t, giving shallow,
 independent per-step graphs — no deep cross-step graph, cheap backward.
 
-Private (ssa). Reuses the LoRA + optimizer machinery from the public `llms`
-heal harness (`mla.heal`); the stochastic-attention application stays here.
+Reuses the LoRA + optimizer machinery from `mla.heal` in the `specd` package
+(github.com/aaholmes/llms).
 
 Run (GPU, after the bias-curve sweep):
     uv run python -m ssa.harness.debias_train --model Qwen/Qwen3-4B --corpus code \
